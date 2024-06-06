@@ -1,0 +1,570 @@
+---
+title: "Psych 6841 HW1"
+author: "Sam Bendziewicz"
+date: "2024-05-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+# Automatically setting the seed across the notebook
+
+```{r, set.seed(2019)}
+knitr::opts_chunk$set(cache.extra = knitr::rand_seed)
+```
+
+#Install & Activate Libraries
+
+```{r}
+#' <!-- ####################################################################################################### -->
+#' <!-- ####################################################################################################### -->
+#' <!-- ##################################LOADING PACKAGES##################################################### -->
+
+tryCatch(require(pacman),finally=utils:::install.packages(pkgs='pacman',repos='http://cran.r-project.org'));
+require(pacman)
+
+pacman::p_load(Hmisc,
+               checkmate,
+               corrr,
+               conflicted,
+               readxl,
+               dplyr,
+               tidyr,
+               ggplot2,
+               knitr,
+               evaluate,
+               iopsych,
+               psych,
+               quantreg,
+               lavaan,
+               xtable,
+               reshape2,
+               GPArotation,
+               Amelia,
+               # esquisse,
+               expss,
+               multilevel,
+               janitor,
+               mice,
+               lmtest,
+               naniar,
+               haven,
+               tidylog
+)
+
+```
+
+
+```{r, echo = FALSE, include= FALSE, warning = FALSE, message = FALSE}
+
+#' <!-- #Loading libraries -->
+
+suppressPackageStartupMessages({
+    library(Hmisc) # Contains many functions useful for data analysis
+    library(checkmate) # Fast and Versatile Argument Checks
+    library(corrr) # Correlations in R
+    library(conflicted) # Makes it easier to handle same named functions that are in different packages
+    library(readxl) # reading in Excel files
+    library(dplyr) # data manipulation
+    library(tidyr) # Tidy Messy Data and pivot_longer and pivot_wider
+    library(ggplot2) # data visualization
+    library(knitr) # knitting data into HTML, Word, or PDF
+    library(evaluate) # Parsing and Evaluation Tools that Provide More Details than the Default
+    library(iopsych) # Methods for Industrial/Organizational Psychology
+    library(psych) # Procedures for Psychological, Psychometric, and Personality Research
+    library(quantreg) # Quantile Regression
+    library(lavaan) # confirmatory factor analysis (CFA) and structural equation modeling (SEM)
+    library(xtable) # Export Tables to LaTeX or HTML
+    library(reshape2) # transforming data between wide and long (tall)
+    library(GPArotation) # GPA Factor Rotation
+    library(Amelia) # A Program for Missing Data
+    # library(esquisse) # Explore and Visualize Your Data Interactively
+    library(expss) # Tables, Labels and Some Useful Functions from Spreadsheets and 'SPSS' Statistics
+    library(multilevel) # Multilevel Functions
+    library(janitor) # 	Simple Tools for Examining and Cleaning Dirty Data
+    library(mice) # Multivariate Imputation by Chained Equations
+    library(skimr) # Exploratory Data Analysis
+    library(lmtest) # A collection of tests, data sets, and examples for diagnostic checking in linear regression models
+    library(naniar) # helps with missing data
+    library(foreign) # allows us to read SPSS .sav documents (keeps text scale)
+    library(haven) # allows us to read SPSS .sav documents (somehow converts scale to numerical)
+    library(tidylog) # Creates a log to tell you what your tidyverse commands are doing to the data. NOTE: MAKE SURE TO ALWAYS LOAD LAST!!!
+})
+
+for (f in getNamespaceExports("tidylog")) {
+    conflicted::conflict_prefer(f, "tidylog", quiet = TRUE)
+}
+```
+
+## Loading & Looking @ Data
+
+Now we're going to load the data and take a quick look at it:
+
+```{r}
+#' <!-- ####################################################################################################### -->
+#' <!-- ####################################################################################################### -->
+#' <!-- ##################################LOADING DATA######################################################### -->
+
+#loading data (.sav is a spss file type so use read.spss)
+data <- read_sav("/Users/sbendziewicz/Desktop/Advanced Analytics/HW1/SAQ.sav")
+
+#Looking at data
+glimpse(data) #from `dplyr`
+colnames(data) #look at what the items are and any extra colums
+library(skimr)
+
+skim(data)
+
+```
+
+## Exploratory Data Analysis
+# Missing Data
+
+```{r}
+#' Looking for missing data
+library(Amelia) #Amelia package allows us to look for missing data (like the missing pilot)
+
+missmap(data)
+
+#do it again, but make it look good
+missmap(data, y.at=c(1), y.labels=c(''), col=c('yellow', 'black')) #gojackets - missing data shows up as yellow against a black backdrop on an item by item basis
+
+
+```
+
+That is better. Let's also take a look with a custom function `percentmissing`.
+```{r}
+percentmissing = function (x){ sum(is.na(x))/length(x) * 100}
+
+missing <- apply(data, 1, percentmissing) # we will use an apply function to loop it. 1 indicates rows and 2 indicates columns
+
+table(round(missing, 1))
+```
+
+The top number you see is the % missing so 0% are missing from 2571 people. Looks like we have a nice and complete data set!
+
+## Outlier Detection
+
+Now let's look for outliers with Mahalanobis.
+
+Take just the items, no factor scores
+```{r}
+data_23 <- data[,1:23]
+
+##outliers
+cutoff = qchisq(1-.001, ncol(data_23)) #this sets your cutoff value as a chi-square value to compare against your mahalnobis distance. if MD is greater than this cutoff, it's an outlier
+mahal = mahalanobis(data_23,
+                    colMeans(data_23),
+                    cov(data_23))
+cutoff ##cutoff score
+ncol(data_23) ##df
+summary(mahal < cutoff)
+```
+In this case, "False" indicates an outlier, so let's figure out what they are
+
+```{r}
+##Create new data frame called "nomiss_mahal" with an extra column on the end of the 23 survey items that shows mahalanobis distance
+
+nomiss_mahal <- data_23 %>%
+    bind_cols(mahal) %>%
+    rename(mahal = `...24`) # renaming the new column "mahal"
+
+##Look at the outliers
+mahal_out <- nomiss_mahal %>%
+    filter(mahal > cutoff) %>%
+    arrange(desc(mahal)) # sort mahal values from most to least
+```
+It looks like these may be examples of extreme responding (mostly high or low values).
+
+For now, let's omit them.
+## Outlier Omission
+```{r}
+##exclude outliers
+data_noout <- data %>%
+    filter(mahal < cutoff)
+data_noout_q <- data_noout[,1:23]
+```
+
+## Additivity
+
+Now we'll take a look at additivity. We are looking for any 1s off the diagonal. We also need this correlation matrix for our KMO check later on for sampling adequacy.
+
+
+```{r}
+##additivity
+correl = cor(data_noout_q, use = "pairwise.complete.obs")
+
+symnum(correl)
+
+correl
+```
+
+We are using real data to predict a noise variable. The predictions should be random so the errors should be random. The errors should be random in a real analysis because of independence. If it isn't random, then there is something going on in the background.
+
+```{r}
+##assumption set up
+random = rchisq(nrow(data_noout_q), 7)
+fake = lm(random~., # Y is predicted by all variables in the data
+          data = data_noout_q) # You can use categorical variables now!
+standardized = rstudent(fake) # Z-score all of the values to make it easier to interpret.
+fitted = scale(fake$fitted.values)
+
+##normality - Check the residuals.
+hist(standardized)
+```
+
+
+```{r}
+#load lmtest library
+library(lmtest)
+
+#perform Breusch-Pagan Test
+bptest(fake)
+
+```
+
+The test statistic is 10.455 and the corresponding p-value is .988 Since the p-value is not less than 0.05, we fail to reject the null hypothesis. We do not have sufficient evidence to say that heteroscedasticity is present in the regression model.
+
+## Q-Q Plot
+
+#Check linearity using qqplot.
+```{r}
+##linearity
+qqnorm(standardized)
+abline(0,1)
+```
+The QQ plot between -2 and 2 is slightly U-shaped, but for the purposes of this assignment and what we've learned so far, we'll press on with the data as-is
+
+## Bartlett's Test
+
+# We'll check correlation adequacy with Bartlett's test. <https://easystats.github.io/performance/reference/check_factorstructure.html#:~:text=Bartlett's%20Test%20of%20Sphericity,-Bartlett's%20(1951)%20test&text=It%20tests%20whether%20the%20correlation,for%20factor%20analysis%20to%20work.> is a good overview of Bartlett & KMO 
+```{r}
+##correlation adequacy Bartlett's test
+cortest.bartlett(correl, n = nrow(data_noout_q))
+```
+
+
+```{r}
+##sampling adequacy KMO test
+KMO(correl[,1:23])
+```
+The mean sampling adequacy (MSA) was .97, which is a good score
+
+OK, it seems this data is OK to run an EFA on. Let's go ahead and make our "noout" object that was the final result of our adequacy testing back into our "Data".
+
+```{r}
+Data_EFA <- data_noout[,1:23]
+#check to make sure we still have all our survey items but nothing else
+colnames(Data_EFA)
+
+
+```
+
+### Exploratory Factor Analysis (EFA)
+
+First, we need to split our data into a Training and a Test set. Often times this is done 80/20, or 70/30, but we'll do 50/50 today. Who here has split their data like this before? We (I) never did this in grad school.
+
+
+```{r}
+#' <!-- ####################################################################################################### -->
+#' <!-- ####################################################################################################### -->
+#' <!-- ##########################EXPLORATORY FACTOR ANALYSIS ################################################# -->
+
+#' ## Split Data into Training and Test set
+
+#' Now we will split the data into a training (EFA) and test (CFA) set.
+
+set.seed(2024) #This can be any number. Remember to mix up your set.seed() number if you will be using it a lot as it isn't technically "random".
+
+
+#' Let's create an ID variable for our data set.
+Data_EFA <- Data_EFA %>% 
+    mutate(ID = row_number())
+
+# Move the ID Variable as the first column
+Data_EFA <- Data_EFA %>%
+    dplyr::select(ID, everything())
+
+#check it out
+colnames(Data_EFA)
+```
+Creating our Training & Test Data Sets (on a 50/50 split)
+
+```{r}
+training <- sample(Data_EFA$ID, length(Data_EFA$ID)*0.5) #I don't exactly what this is doing, but i want to know
+
+Data_training <- subset(Data_EFA, ID %in% training)
+Data_test <- subset(Data_EFA, !(ID %in% training)) #the ! means not and will essentially exclude everything generated in the line above
+
+```
+
+
+```{r}
+hist(Data_training$Question_01, breaks = 6, main = 'Question 1', xlab='Rating')
+hist(Data_training$Question_02, breaks = 6, main = 'Question 2', xlab='Rating')
+hist(Data_training$Question_03, breaks = 6, main = 'Question 3', xlab='Rating')
+hist(Data_training$Question_04, breaks = 6, main = 'Question 4', xlab='Rating')
+hist(Data_training$Question_05, breaks = 6, main = 'Question 5', xlab='Rating')
+hist(Data_training$Question_06, breaks = 6, main = 'Question 6', xlab='Rating')
+hist(Data_training$Question_07, breaks = 6, main = 'Question 7', xlab='Rating')
+hist(Data_training$Question_08, breaks = 6, main = 'Question 8', xlab='Rating')
+hist(Data_training$Question_09, breaks = 6, main = 'Question 9', xlab='Rating')
+hist(Data_training$Question_10, breaks = 6, main = 'Question 10', xlab='Rating')
+hist(Data_training$Question_11, breaks = 6, main = 'Question 11', xlab='Rating')
+hist(Data_training$Question_12, breaks = 6, main = 'Question 12', xlab='Rating')
+hist(Data_training$Question_13, breaks = 6, main = 'Question 13', xlab='Rating')
+hist(Data_training$Question_14, breaks = 6, main = 'Question 14', xlab='Rating')
+hist(Data_training$Question_15, breaks = 6, main = 'Question 15', xlab='Rating')
+hist(Data_training$Question_16, breaks = 6, main = 'Question 16', xlab='Rating')
+hist(Data_training$Question_17, breaks = 6, main = 'Question 17', xlab='Rating')
+hist(Data_training$Question_18, breaks = 6, main = 'Question 18', xlab='Rating')
+hist(Data_training$Question_19, breaks = 6, main = 'Question 19', xlab='Rating')
+hist(Data_training$Question_20, breaks = 6, main = 'Question 20', xlab='Rating')
+hist(Data_training$Question_21, breaks = 6, main = 'Question 21', xlab='Rating')
+hist(Data_training$Question_22, breaks = 6, main = 'Question 22', xlab='Rating')
+hist(Data_training$Question_23, breaks = 6, main = 'Question 23', xlab='Rating')
+```
+#I could have played with GGPLOT to makes these bars center over the amount, but it wasn't a valuable use of my time for this assignment. I have code to do this from Psych6820
+Ok, now let's take a look at the correlation matrix using the `corrr` package.
+
+```{r}
+library(corrr)
+
+Cor_Mat <- Data_training %>%
+    correlate() %>% 
+    shave() %>% # Remove upper triangle
+    fashion() # Print in nice format
+
+print(Cor_Mat)
+
+#Flatten Correlation Matrix Function to make it smaller
+
+flattenCorrMatrix <- function(cormat, pmat, nmat) {
+    ut <- upper.tri(cormat)
+    data.frame(
+        row = rownames(cormat)[row(cormat)[ut]],
+        column = rownames(cormat)[col(cormat)[ut]],
+        cor  =(cormat)[ut],
+        p = pmat[ut],
+        n = nmat[ut]
+    )
+}
+#load HMISC & checkmate to use rcorr to use in flattenCorrMatrix
+library(Hmisc)
+library(checkmate)
+
+#Turn data_training to a matrix
+Data_training_MAT <- as.matrix(Data_training)
+
+#get correlation matrix for flattenCorrMatrix
+res <- rcorr(Data_training_MAT)
+print(res)
+
+Data_Flat_Cor_Mat_stretch <- Data_training %>%
+    select(-ID) %>% # remove ID variable since we don't need it
+    correlate() %>% # calculate correlations
+    stretch() %>% # make it tall
+    fashion() # round it
+
+Data_Flat_Cor_Mat_stretch
+```
+Ok, back to EFA, which is all about correlations.
+
+We will use [Parallel Analysis](https://en.wikipedia.org/wiki/Parallel_analysis) with a journal article [here](https://journals.sagepub.com/doi/pdf/10.1177/1094428104263675) to give us a baseline for factor retention. Often times you will simply be given data and asked how many factors there are. You may have some a priori feelings to this number, but it is also good to let the data guide you. (We don't have any idea for this data set yet)
+
+```{r}
+fa.parallel(Data_training[c(2:24)]) #this excludes the ID column
+```
+Looks like we get 4 or 5 factors with 4 components. Let's run both and compare! In PCA, components can share variance. Factor analysis is used for latent variables (underlying aspects driving variance, or concepts we can see and must tangentially measure)
+
+```{r}
+#4 factor model
+fa_ml_4_trn <- fa(Data_training[c(2:24)], nfactors = 4, fm="ml", rotate="oblimin")
+print(fa_ml_4_trn$loadings, cutoff = .33)
+print(fa_ml_4_trn)
+```
+#I'm not loving this 4-factor model, and I'm not surprised it's not a great fit based on what our fa.parralel code told us, but I'm a curious guy. I guess that's why my friends call me whiskers
+```{r}
+#5 factor model
+fa_ml_5_trn <- fa(Data_training[c(2:24)], nfactors = 5, fm="ml", rotate="oblimin")
+print(fa_ml_5_trn$loadings, cutoff = .33)
+print(fa_ml_5_trn)
+```
+#This is a lot better than the 4 factor model - let's try 6 just in case
+```{r}
+#6 factor model
+fa_ml_6_trn <- fa(Data_training[c(2:24)], nfactors = 6, fm="ml", rotate="oblimin")
+print(fa_ml_6_trn$loadings, cutoff = .33)
+print(fa_ml_6_trn)
+```
+TLI & RMSEA is better, but not so much so that the decrease in variance explained can be stomached. Lets stick with the 5-factor model.
+
+The five-factor model is the best fit, with .355 variance explained, and no items cross-loading.
+
+Questions 10, 12, 15, & 23 do no load on any factor with more than .333 loading weight in the 5 factor model. Lets remove the questions and see how it changes...
+#Removing the items that didn't laod
+```{r}
+Data_training_MOD <- Data_training %>%
+    dplyr::select(-c(Question_10, Question_12, Question_15, Question_23))
+```
+
+Rerun what the best factor model is:
+
+```{r}
+fa.parallel(Data_training_MOD[c(2:20)]) #this excludes the ID column
+```
+
+
+Rerun the EFA with questions out
+
+```{r}
+fa_ml_5_trn_2 <- fa(Data_training_MOD[c(2:20)], nfactors = 5, fm="ml", rotate="oblimin")
+print(fa_ml_5_trn_2)
+print(fa_ml_5_trn_2$loadings, cutoff = .33333)
+```
+#This improved our model by .04ish after removing items 10, 12, 15 & 23
+
+Let's Export the 5 Factor Model into a format that we can use
+```{r}
+fa_ml_5_factor_loadings <- as.data.frame(round(unclass(fa_ml_5_trn_2$loadings), 3)) %>%
+    tibble::rownames_to_column("items") # "items" is what we want to call the column. You can make this anything
+# Where did I learn this? 
+# https://stackoverflow.com/questions/29511215/how-can-i-convert-row-names-into-the-first-column
+
+openxlsx::write.xlsx(fa_ml_5_factor_loadings, "~/Desktop/Advanced Analytics/HW1/fa_ml_5_factor_loadings.xlsx")
+```
+
+Let's Look at the questions and see if any need to be reverse scored - Remove the ID column First
+
+```{r}
+items_only <- Data_training_MOD %>%
+    dplyr::select(-c(ID))
+
+skim(items_only)
+```
+#Maybe? I didn't end up reverse scoring anything. You could argue that item three needs to be reverse scored
+This block of code helps you delineate which items load into which factors with a simple 1/0 input output. Negatives reflect reverse scoring
+```{r}
+SPSS_keys_list <- list(Tech = c(6,7,11,12,15),
+                      Math = c(8,10,14),
+                      Sleep = c(17,18), # 2 items
+                      Percept = c(2,-3,9,16,19), 
+                      Emote = c(1,4,5,13) #4 items here because we dropped one
+                      )
+
+spss_keys <- make.keys(items_only, SPSS_keys_list, item.labels = colnames(items_only))
+```
+
+Now we will score the items.
+
+```{r}
+scores <- scoreItems(spss_keys, items_only, impute = "none", 
+                         min = 1, max = 5, digits = 3)
+
+head(scores$scores)
+
+scores_df <- as.data.frame(scores$scores)
+```
+Now we'll split out each factor individually to do scale analysis. We can use `select` again and pair it with the helper function `starts_with`. So what letter will we chose for Agreeableness?
+
+```{r}
+#' Now let's split out the data into factors for easier analysis
+Tech <- items_only %>%
+    dplyr::select(c(6,7,11,12,15))
+
+Math <- items_only %>%
+    dplyr::select(c(8,10,14))
+
+Sleep <- items_only %>%
+    dplyr::select(c(17,18))
+
+Percept <- items_only %>%
+    dplyr::select(c(2,3,9,16,19))
+
+Emote <- items_only %>%
+    dplyr::select(c(1,4,5,13))
+```
+
+## Scale reliability analysis of Technology
+
+Ok, what we will need to do now is create the keys by individual scale.
+
+```{r}
+#Tech Items
+scale_keys_list <- list(Tech=c(1, 2, 3, 4, 5))
+
+scale_keys <- make.keys(Tech, scale_keys_list, item.labels = colnames(TECH))
+
+```
+
+#Now we run the alpha tests for Tech
+```{r}
+TECH_ALPHA <- psych::alpha(x = Tech[, abs(scale_keys_list$Tech)], keys = scale_keys)
+print(TECH_ALPHA)
+```
+
+#Creating Scale Keys for Math
+```{r}
+#Math Items
+scale_keys_list_2 <- list(Math=c(1, 2, 3))
+
+scale_keys_2 <- make.keys(Math, scale_keys_list_2, item.labels = colnames(MATH))
+
+```
+
+#Now we run the alpha tests for Math
+```{r}
+MATH_ALPHA <- psych::alpha(x = Math[, abs(scale_keys_list_2$Math)], keys = scale_keys_2)
+print(MATH_ALPHA)
+```
+#Creating Scale Keys for Sleep
+```{r}
+#Sleep Items
+scale_keys_list_3 <- list(Sleep=c(1, 2))
+
+scale_keys_3 <- make.keys(Sleep, scale_keys_list_3, item.labels = colnames(SLEEP))
+
+```
+
+#Now we run the alpha tests for Sleep
+```{r}
+SLEEP_ALPHA <- psych::alpha(x = Sleep[, abs(scale_keys_list_3$Sleep)], keys = scale_keys_3)
+print(SLEEP_ALPHA)
+```
+#Creating Scale Keys for Perception
+```{r}
+#Perception Items
+scale_keys_list_4 <- list(Percept=c(1, -2, 3, 4, 5))
+
+scale_keys_4 <- make.keys(Percept, scale_keys_list_4, item.labels = colnames(PERCEPT))
+
+```
+
+#Now we run the alpha tests for Perception
+```{r}
+PERCEPT_ALPHA <- psych::alpha(x = Percept[, abs(scale_keys_list_4$Percept)], keys = scale_keys_4)
+print(PERCEPT_ALPHA)
+```
+
+##Creating Scale Keys for Emotion
+```{r}
+#Emotional Items
+scale_keys_list_5 <- list(Emote=c(1, 2, 3, 4))
+
+scale_keys_5 <- make.keys(Emote, scale_keys_list_5, item.labels = colnames(EMOTE))
+
+```
+
+#Now we run the alpha tests for Emotions
+```{r}
+EMOTE_ALPHA <- psych::alpha(x = Emote[, abs(scale_keys_list_5$Emote)], keys = scale_keys_5)
+print(EMOTE_ALPHA)
+```
