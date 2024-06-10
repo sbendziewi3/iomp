@@ -208,7 +208,7 @@ correl
 ```
 
 We are using real data to predict a noise variable. The predictions should be random so the errors should be random. The errors should be random in a real analysis because of independence. If it isn't random, then there is something going on in the background.
-
+We expect residuals to be normal, so this is a normalcy check
 ```{r}
 ##assumption set up
 random = rchisq(nrow(data_noout_q), 7)
