@@ -1,0 +1,432 @@
+---
+title: "Homework 3 - Sam Bendziewicz"
+author: "Sam Bendziewicz"
+date: "2024-06-27"
+output: html_document
+---
+
+```{r, set.seed(1234)}
+knitr::opts_chunk$set(cache.extra = knitr::rand_seed)
+```
+
+
+```{r, echo = FALSE, include= FALSE, warning = FALSE, message = FALSE}
+#' <!-- ####################################################################################################### -->
+#' <!-- ####################################################################################################### -->
+#' <!-- ##################################LOADING PACKAGES##################################################### -->
+
+tryCatch(require(pacman),finally=utils:::install.packages(pkgs='pacman',repos='http://cran.r-project.org'));
+require(pacman)
+
+#' <!-- ##if the above doesn't work, use this code## -->
+#' <!-- ##tryCatch -->
+#' <!-- #detach("package:pacman", unload = TRUE) -->
+#' <!-- #install.packages("pacman", dependencies = TRUE) -->
+#' <!-- # ## install.packages("pacman") -->
+
+pacman::p_load(digest,
+               readxl,
+               readr,
+               dplyr,
+               tidyr,
+               ggplot2,
+               knitr,
+               MASS,
+               RCurl,
+               DT,
+               modelr,
+               broom,
+               purrr,
+               pROC,
+               data.table,
+               VIM,
+               gridExtra,
+               Metrics,
+               randomForest,
+               e1071,
+               corrplot,
+               DMwR2,
+               rsample,
+               skimr,
+               psych,
+               conflicted,
+               tree,
+               tidymodels,
+               janitor,
+               GGally,
+               tidyquant,
+               doParallel,
+               Boruta,
+               correlationfunnel,
+               naniar,
+               plotly,
+               themis,
+               questionr,
+               tidylog
+)
+
+# Loading from GitHub
+pacman::p_load_current_gh("agstn/dataxray")
+```
+
+```{r, echo = FALSE, include= FALSE, warning = FALSE, message = FALSE}
+
+#' <!-- #Loading libraries -->
+
+suppressPackageStartupMessages({
+    library(conflicted) # An Alternative Conflict Resolution Strategy
+    library(readxl) # read in Excel files
+    library(readr) # read in csv files
+    library(MASS) # Functions and datasets to support Venables and Ripley, "Modern Applied Statistics with S" (4th edition, 2002).
+    library(dplyr) # A Grammar of Data Manipulation
+    library(tidyr) # Tidy Messy Data
+    library(broom) # Convert Statistical Objects into Tidy Tibbles
+    library(ggplot2) # grammar of graphics for visualization
+    library(knitr) # A General-Purpose Package for Dynamic Report Generation in R
+    library(RCurl) # General Network (HTTP/FTP/...) Client Interface for R
+    library(DT) # A Wrapper of the JavaScript Library 'DataTables'
+    library(modelr) # Modelling Functions that Work with the Pipe
+    library(purrr) # Functional Programming Tools - helps with mapping (i.e., loops)
+    library(pROC) #	Display and Analyze ROC Curves
+    library(data.table) # Fast aggregation of large data (e.g. 100GB in RAM)
+    library(VIM) # Visualization and Imputation of Missing Values
+    library(gridExtra) # Miscellaneous Functions for "Grid" Graphics
+    library(Metrics) # Evaluation Metrics for Machine Learning
+    library(randomForest) # Breiman and Cutler's Random Forests for Classification and Regression
+    library(e1071) # Misc Functions of the Department of Statistics, Probability Theory Group (Formerly: E1071), TU Wien
+    library(corrplot) # Visualization of a Correlation Matrix
+    library(DMwR2) # Functions and Data for the Second Edition of "Data Mining with R"
+    library(rsample) # General Resampling Infrastructure
+    library(skimr) # Compact and Flexible Summaries of Data
+    library(psych) # Procedures for Psychological, Psychometric, and Personality Research
+    library(tree) # Classification and Regression Trees
+    library(tidymodels) # Easily Install and Load the 'Tidymodels' Packages
+    library(janitor) # Simple Tools for Examining and Cleaning Dirty Data
+    library(GGally) # Extension to 'ggplot2'
+    library(tidyquant) # Tidy Quantitative Financial Analysis
+    library(doParallel) # Foreach Parallel Adaptor for the 'parallel' Package
+    library(Boruta) # Wrapper Algorithm for All Relevant Feature Selection
+    library(correlationfunnel) # Speed Up Exploratory Data Analysis (EDA) with the Correlation Funnel
+    library(naniar) # viewing and handling missing data
+    library(plotly) # Create interactive plots
+    library(vip)
+    library(themis) # Upsampling and Downsampling methods for tidymodels
+    library(questionr) # this will give you odds ratios
+    library(tidylog, warn.conflicts = FALSE)
+})
+
+for (f in getNamespaceExports("tidylog")) {
+    conflicted::conflict_prefer(f, "tidylog", quiet = TRUE)
+}
+```
+
+Set your `conflict_prefer`. These are bulk preferences we see in our class code, and also the dumping ground for preferences needed further down in the code. I plan to copypasta all these into most of my code and # out the ones I need to turn off.
+
+```{r}
+conflict_prefer("select", "dplyr")
+conflict_prefer("tune", "tune")
+conflict_prefer("chisq.test", "stats")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("skewness", "PerformanceAnalytics")
+conflict_prefer("fit", "parsnip")
+conflict_prefer("rmse", "yardstick")
+conflict_prefer("map", "purrr")
+conflict_prefer("vip", "vip")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("describe", "psych")
+```
+
+Bring in the data. This is the IBM HR data with 1470 observations we used in class - This is our first important thing we do for the actual assignment
+
+```{r}
+
+stringsAsFactors = TRUE
+library(readxl)
+Data <- read_excel("~/Desktop/Advanced Analytics/Class 3/employee_data.xlsx")
+colnames(Data)
+
+str(Data)
+
+Data <- as.data.frame(unclass(Data)) #Change all strings from Character to Factor
+#From: https://stackoverflow.com/questions/20637360/convert-all-data-frame-character-columns-to-factors
+
+str(Data)
+```
+Let's put an ID variable in there in case we need it. - there is a chance we get rid of this and use employee ID
+
+```{r}
+Data <- Data %>% 
+    mutate(ID = row_number()) %>%
+  select(ID, everything())
+```
+
+Now we're going to check for and identify any duplicates or missing data. 
+
+```{r}
+sum(is.na(duplicated(Data)))
+which(duplicated(Data$ID))
+
+#Missing Data visualization (Amelia Earhart)
+library(Amelia)
+missmap(Data, y.at=c(1), y.labels=c(''), col=c('yellow', 'black'))
+
+#custom f(x) percent missing if you don't need the visualization
+percentmissing <- function (x){ sum(is.na(x))/length(x) * 100}
+
+missing <- apply(Data, 1, percentmissing) # we will use an apply function to loop it. 1 indicates rows and 2 indicates columns
+
+table(missing)
+```
+Our missingness map shows no yellow blips, which is nice.
+
+
+Look at the data and see what we're workin with
+
+```{r}
+#take a looksee
+glimpse(Data)
+skim(Data)
+
+#get proportions of fields that have characters and what the options are
+Data %>%
+    select_if(is.character) %>%
+    map(~round(prop.table(table(.x)),2))
+
+#The following will give us how many unique values are in each numeric variable. For instance we would expect a 1470 value for ID since these are supposed to be unique. This bit of code creates a df in case we need to kick it out to Excel
+TEST <- Data %>%
+    select_if(is.numeric) %>%
+    map(~ unique(.) %>% length()) %>%
+  as.data.frame()
+# Make it vertical and arrange descending
+TEST_melt <- TEST %>%
+  pivot_longer(everything()) %>%
+  arrange(desc(value))
+print(TEST_melt)
+```
+
+Tidy up the data a little bity by putting ID & Employee number next to each other. Then check it out again
+
+```{r}
+Data <- Data %>%
+  select(ID, EmployeeNumber, everything())
+summary(Data)
+describe(Data)
+```
+Lets Look at it
+
+```{r}
+glimpse(Data)
+```
+
+Now we gotta split our data:
+## Training and Test Data 
+
+```{r}
+set.seed(2020)
+data_split <- initial_split(Data, prop = 0.75, strata = "Attrition")
+
+train_data <- training(data_split)
+
+test_data <- testing(data_split)
+
+tabyl(train_data$Attrition)
+
+tabyl(test_data$Attrition)
+
+```
+
+Creating the cross validation v fold creation
+
+```{r}
+set.seed(2020)
+cv_folds <- vfold_cv(train_data, v = 10, strata = "Attrition")
+```
+
+Run the recipe we created in class
+
+# Rerun the recipe since features have been removed
+
+```{r}
+set.seed(2020) #setting seed here because I think step_upsample may need it.
+
+#Possible way to fix step_num2factor
+#From: https://stackoverflow.com/questions/61564259/step-num2factor-usage-tidymodel-recipe-package
+
+recipe_obj_prep <- recipe(Attrition ~ ., data = train_data) %>% 
+  update_role(ID, EmployeeNumber, new_role = "ID") %>%
+  step_mutate(JobLevel = factor(JobLevel)) %>% #step_num2factor doesn't seem to like having more than one variable, especially if they have a different number of factors. It will apply the given "Levels" to all variables listed even if that makes no sense...
+    step_mutate(StockOptionLevel = factor(StockOptionLevel)) %>% #so enter step_mutate. See link above.
+    step_YeoJohnson(
+                    YearsSinceLastPromotion, #Need to break out step_YeoJohnson into each variable as opposed to a vector for some reason
+                    # PerformanceRating, # removed
+                    YearsAtCompany,
+                    MonthlyIncome,
+                    TotalWorkingYears,
+                    NumCompaniesWorked,
+                    # DistanceFromHome, # removed
+                    YearsInCurrentRole,
+                    YearsWithCurrManager
+                    # PercentSalaryHike # removed
+                    ) %>%
+    step_nzv(all_numeric()) %>% #it looks like step_nzv also takes care of step_zv so these are probably redundant.
+    step_zv(all_predictors()) %>%
+    step_normalize(all_numeric()) %>%
+    step_upsample(all_outcomes(), skip = TRUE) %>% #see here (https://recipes.tidymodels.org/articles/Skipping.html) We want to upsample on training data, but not on test data
+    # step_novel(all_predictors()) %>% #creates a specification of a recipe step that will assign a previously unseen factor level to a new value. #This is throwing an error downstream. Not dealing with this right now, just commenting out.
+    step_dummy(all_nominal(), -all_outcomes()) %>%
+    prep()
+
+  
+recipe_obj_prep
+```
+```{r}
+
+```
+I need to make an unprepped version of this recipe for later apparently?
+
+```{r}
+recipe_obj <- recipe(Attrition ~ ., data = train_data) %>% 
+  update_role(ID, EmployeeNumber, new_role = "ID") %>%
+  step_mutate(JobLevel = factor(JobLevel)) %>% #step_num2factor doesn't seem to like having more than one variable, especially if they have a different number of factors. It will apply the given "Levels" to all variables listed even if that makes no sense...
+    step_mutate(StockOptionLevel = factor(StockOptionLevel)) %>% #so enter step_mutate. See link above.
+    step_YeoJohnson(
+                    YearsSinceLastPromotion, #Need to break out step_YeoJohnson into each variable as opposed to a vector for some reason
+                    # PerformanceRating, # removed
+                    YearsAtCompany,
+                    MonthlyIncome,
+                    TotalWorkingYears,
+                    NumCompaniesWorked,
+                    # DistanceFromHome, # removed
+                    YearsInCurrentRole,
+                    YearsWithCurrManager
+                    # PercentSalaryHike # removed
+                    ) %>%
+    step_nzv(all_numeric()) %>% #it looks like step_nzv also takes care of step_zv so these are probably redundant.
+    step_zv(all_predictors()) %>%
+    step_normalize(all_numeric()) %>%
+    step_upsample(all_outcomes(), skip = TRUE) %>% #see here (https://recipes.tidymodels.org/articles/Skipping.html) We want to upsample on training data, but not on test data
+    # step_novel(all_predictors()) %>% #creates a specification of a recipe step that will assign a previously unseen factor level to a new value. #This is throwing an error downstream. Not dealing with this right now, just commenting out.
+    step_dummy(all_nominal(), -all_outcomes())
+```
+
+
+
+
+```{r}
+start_time <- now()
+set.seed(2020)
+
+lasso_spec <- logistic_reg(penalty = tune(), mixture = tune()) %>%
+  set_engine("glmnet")
+
+lambda_grid <- grid_regular(penalty(), mixture(), levels = 50)
+
+lasso_grid <- tune_grid(
+    wf %>% add_model(lasso_spec), resamples = cv_folds,
+    grid = lambda_grid
+)
+
+lasso_grid %>%
+  collect_metrics()
+end_time <- now()
+
+print(difftime(end_time, start_time)) #How long it took this chunk to run
+
+lasso_grid %>% collect_metrics()
+#lasso_fit <- wf %>%
+  #add_model(lasso_spec) %>%
+  #fit(data = train_data)
+
+#lasso_fit %>%
+  #pull_workflow_fit() %>%
+  #tidy()
+```
+
+All those metrics are a mess, and I'm not really even sure what all of them are, but I can write a quick somethin to visualize performance with the regularization parameter
+```{r}
+lasso_grid %>%
+  collect_metrics() %>%
+  ggplot(aes(penalty, mean, color = .metric)) +
+  geom_errorbar(aes(
+    ymin = mean - std_err,
+    ymax = mean + std_err
+  ),
+  alpha = 0.5
+  ) +
+  geom_line(size = 1.5) +
+  facet_wrap(~.metric, scales = "free", nrow = 2) +
+  scale_x_log10() +
+  theme(legend.position = "none")
+
+```
+I really don't know what I'm looking at here, I'm guessingit isn't showing our RMSE and RSQ like it did for the lovely Ms. Silge because we're doing a logistic regression, and she was doing linear. I am not getting , but let's see if we can pick out the lowest RMSE and then we'll finalize our workflow:
+
+```{r}
+best_auc <- lasso_grid %>%
+  select_best(metric = "roc_auc")
+
+final_lasso <- finalize_model(lasso_spec,
+                              best_auc
+)
+
+final_lasso
+```
+
+```{r}
+
+
+final_lasso %>%
+    set_engine("glmnet", importance = "permutation") %>%
+    parsnip::fit(Attrition ~ .,
+        data = juice(recipe_obj_prep)) %>%
+    vip(geom = "point")
+```
+Set up this metrics object for some reason:
+
+```{r}
+class_metric <- metric_set(accuracy, 
+                           f_meas, 
+                           j_index, 
+                           kap, 
+                           precision, 
+                           sensitivity, 
+                           specificity, 
+                           roc_auc, 
+                           mcc, 
+                           pr_auc)
+```
+
+
+
+```{r}
+rf_final_wf <- workflow() %>%
+    add_recipe(recipe_obj) %>%
+    add_model(final_lasso)
+
+rf_final_res <- rf_final_wf %>%
+    last_fit(data_split,
+             metrics = class_metric)
+
+rf_final_res %>%
+    collect_metrics()
+```
+Time for the confusion matrix! Everyone's favorite
+```{r}
+rf_test_predictions <- rf_final_res %>% collect_predictions()
+rf_test_predictions
+
+rf_test_predictions %>%
+  pr_curve(Attrition, .pred_No) %>%
+  ggplot(aes(x = recall, y = precision)) +
+  geom_path() + 
+  coord_equal() +
+  theme_bw()
+
+rf_test_predictions %>%
+  conf_mat(truth = Attrition, estimate = .pred_class)
+
+rf_test_predictions %>%
+  conf_mat(truth = Attrition, estimate = .pred_class) %>%
+  summary()
+```
+If I'm reading this right, our accuracy and specificity came out at .789 and .783 respectively. Notice now, `specificity` has shrunk to 0.789 from 0.796 of the logistic regression model. Meaning that if we say someone is going to leave, we get it right with this model 25 times out of 60 or (47/60) = .783 or 78.3%. So while the `accuracy` is also better than our previous model at 78.9%% vs 70%, the thing we are actually trying to predict, Attrition, we get right 78% of the time, which is pretty close to the 79.6% in the Logistic regression model. What's important here is that because our accuracy also went up in predicting which employees would stay, which helps us save money if we were possibly wanting to offer retention bonuses to people that were thinking of leaving. increasing accuracy is important in this case because it saves us money by not applying a treatment to a group that didn't need it in the first place. Depending on the size of the treatment, this increase in accuracy may be a worthwhile tradeoff for the small decrease in specificity.
