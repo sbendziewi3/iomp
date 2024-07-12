@@ -134,6 +134,8 @@ conflict_prefer("map", "purrr")
 conflict_prefer("vip", "vip")
 conflict_prefer("filter", "dplyr")
 conflict_prefer("describe", "psych")
+conflict_prefer("accuracy", "yardstick")
+conflict_prefer("precision", "yardstick")
 ```
 
 Bring in the data. This is the IBM HR data with 1470 observations we used in class - This is our first important thing we do for the actual assignment
@@ -319,6 +321,9 @@ set.seed(2020)
 lasso_spec <- logistic_reg(penalty = tune(), mixture = tune()) %>%
   set_engine("glmnet")
 
+wf <- workflow() %>%
+  add_recipe(recipe_obj)
+
 lambda_grid <- grid_regular(penalty(), mixture(), levels = 50)
 
 lasso_grid <- tune_grid(
@@ -429,4 +434,6 @@ rf_test_predictions %>%
   conf_mat(truth = Attrition, estimate = .pred_class) %>%
   summary()
 ```
-If I'm reading this right, our accuracy and specificity came out at .789 and .783 respectively. Notice now, `specificity` has shrunk to 0.789 from 0.796 of the logistic regression model. Meaning that if we say someone is going to leave, we get it right with this model 25 times out of 60 or (47/60) = .783 or 78.3%. So while the `accuracy` is also better than our previous model at 78.9%% vs 70%, the thing we are actually trying to predict, Attrition, we get right 78% of the time, which is pretty close to the 79.6% in the Logistic regression model. What's important here is that because our accuracy also went up in predicting which employees would stay, which helps us save money if we were possibly wanting to offer retention bonuses to people that were thinking of leaving. increasing accuracy is important in this case because it saves us money by not applying a treatment to a group that didn't need it in the first place. Depending on the size of the treatment, this increase in accuracy may be a worthwhile tradeoff for the small decrease in specificity.
+If I'm reading this right, our accuracy, sensitivity, and specificity came out at .775, .783, and .773 respectively. When hand calculating the confusion matrix, I noticed that the values for sensitivity and specificity appear to be swapped as defined by the data school resource provided in class (https://www.dataschool.io/simple-guide-to-confusion-matrix-terminology/). That said, `accuracy` for the lasso modelis slightly better at 0.789 than 0.769 of the logistic regression model, and a little poorer than the .829 in the random forest. Our `specificity` (True Negative Rate) is not as good as our logistic and random forest models,  at .783 compared to .799 and .915 respectively. Our`sensitivity` (True positive rate) is also better than both our logistic and random forest models at .733 vs .717 and .383. 
+
+The thing we are actually trying to predict, Attrition, we get right 73.3% of the time, which is better than the the 71.7% in the Logistic regression model. What's important here is that because our accuracy also went up in predicting which employees would stay, coupled with a slightly better AUC (.839), I'm inclined to lean towards this lasso regression to helps us save money if we were possibly wanting to offer retention bonuses to people that were thinking of leaving. increasing accuracy is important in this case because it saves us money by not applying a treatment to a group that didn't need it in the first place. Depending on the size of the treatment, this increase in accuracy may be a worthwhile tradeoff for the small decrease in specificity.
