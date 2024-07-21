@@ -1,0 +1,1464 @@
+---
+title: "Regex HW - Class 4"
+author: "Sam Bendziewicz"
+date: "2024-07-13"
+output: html_document
+---
+Here's the Categories and Subcategories we're going to search for in this script, along with the some examples of the plain English words that will serve as our triggers:
+
+Benefits
+    benefits_medical: medical, prescription, rx, health, healthcare, hospital, doctor, dependent, cancer, EAP
+    benefits_vision: vision, eye, glasses, contacts, 
+    benefits_dental: dentist, tooth, teeth, dental, 
+    benefits_extras: pet, legal, law, travel accident
+    benefits_life: ad&d, life insurance, indemnity, disability, dismember
+    benefits_spending_accounts: fsa, hsa, commuter,
+    benefits_family: family planning|forming, IVF, adoption, 
+    benefits_pto: pto, time off, vacation, sick, bereavement, 
+    benefits_leave: maternity, paternity, parental, sabbatical, loa, leave
+    benefits_financial: 401, match, retirement, roth, 529, planning, tax
+    benefits_perks: gym, wellbeing, discount(s), education, school, tuition, CEU
+Compensation
+    comp_pay: salary, hourly, pay, comp, compensation
+    comp_extra: bonus, incentive, stip, equity, stock, espp, ltip, 
+Career
+    career_promotion: promo, promotion, progress, advance,
+    career_development: training, development, career, 
+Management
+    management_direct: manager, boss, supervisor, 
+    management_senior: c-suite, execs, executive, executives, c suite, CEO, CFO, CIO, CMO, senior | sr
+    management_board: BOD, board, directors, 
+  
+
+## Loading Libraries
+
+```{r}
+#Loading libraries
+library(openxlsx)
+library(tidyverse)
+library(devtools)
+library(conflicted)
+library(lubridate)
+library(sentimentr)
+library(readr)
+
+```
+
+## Setting Conflict Prefer
+
+```{r}
+conflict_prefer("filter", "dplyr")
+```
+
+## Load Honeywell Data
+
+```{r}
+Data <- read_csv("~/Desktop/Advanced Analytics/Class 4/glassdoortest1.csv")
+```
+
+# Look at column names
+Just to see what you're workin with
+
+```{r}
+colnames(Data)
+
+#renames the ...1 column header to ID which is more recognizable
+Data <- Data %>%
+    rename(ID = "...1")
+```
+
+## Create New Data Frame & Clean it up
+For Science! But really, because we're about to start messing with it, and we don't wanna mess up the original data.
+
+```{r}
+#Creates multiple data frames. One for Pros, one for cons. Renames "Pros" and "Cons" to comments in each data frame respectively \
+Comments_df_pros <- Data %>%
+    select(c(ID, pros)) %>%
+    filter(!is.na(pros)) %>%
+    rename('comments' = 'pros')
+
+Comments_df_cons <- Data %>%
+    select(c(ID, cons)) %>%
+    filter(!is.na(cons)) %>%
+    rename('comments' = 'cons')
+
+#Removes the replacement character that you typically see as a black diamond with question mark. That means there's a problem that the systme cant render a stream of data to correct symbols. Replaces any of these errors with a blank ""
+Comments_df_pros <- Comments_df_pros %>%
+  as_tibble() %>%
+  mutate(comments = str_replace_all(comments, "\uFFFD", ""))
+
+Comments_df_cons <- Comments_df_cons %>%
+  as_tibble() %>%
+  mutate(comments = str_replace_all(comments, "\uFFFD", ""))
+
+#Then convert everything to lowercase
+Comments_df_pros <- Comments_df_pros %>%
+    mutate(comments = tolower(comments)) %>%
+    select(ID, comments) %>%
+    na.omit()
+
+Comments_df_cons <- Comments_df_cons %>%
+    mutate(comments = tolower(comments)) %>%
+    select(ID, comments) %>%
+    na.omit()
+
+#Remove all line breaks
+Comments_df_pros$comments <- gsub("[\r\n]", "", Comments_df_pros$comments)
+Comments_df_cons$comments <- gsub("[\r\n]", "", Comments_df_cons$comments)
+```
+We're about to do all of the regex coding for what were originally identified as "Pros." Once we're in a good place, We'll copy/paste the entire code block into a different workbook, find & replace anywhere where we used the "pros" naming convention with "cons" and then past back into this workbook as a new code block to search the exact same terms in the cons data frame.
+    
+```{r}
+start_time <- now()
+benefits_medical_pros <- c(
+  "\\bmedical\\b",                       # Matches the word 'medical'
+  "\\bprescription\\b",                  # Matches the word 'prescription'
+  "\\brx\\b",                            # Matches the abbreviation 'rx'
+  "\\bhealth\\b",                        # Matches the word 'health'
+  "\\bhealthcare\\b",                    # Matches the word 'healthcare'
+   "\\bhospital\\b",                      # Matches the word 'hospital'
+  "\\bdoctor\\b",                        # Matches the word 'doctor'
+  "\\bdependent\\b",                     # Matches the word 'dependent'
+  "\\bcancer\\b",                        # Matches the word 'cancer'
+  "\\bEAP\\b",                           # Matches the abbreviation 'EAP'
+  "\\bmental\\b",                        # Matches the word 'mental'
+  "\\bhealth\\s?care\\b",                # Matches 'health care' or 'healthcare'
+  "\\b(?:health\\W+(?:\\w+\\W+){0,1}?care)\\b", # Matches variations like 'health care'
+  "(?=.*coverage)(?=.*(?:medic|deduct|prescrip|insur|drug|health|dependent))", # Matches combinations with 'coverage' and related terms
+  "\\bmedic\\W*benefits\\b",             # Matches 'medical benefits' with optional spaces or other characters
+  "\\bprescrip\\W*plan\\b",              # Matches 'prescription plan' with optional spaces or other characters
+  "(?=.*benefits)(?=.*(?:health|medical))", # Matches 'benefits' with any of the specified terms
+  "(?=.*(?:medical|health|prescrip))(?:\\w+\\W+){0,2}?coverage", # Matches 'coverage' within 2 words of any specified terms
+  "(?=.*plan)(?=.*(?:medic|health|insur|benefit))", # Matches 'plan' with any of the specified terms
+  "(?=.*(?:care|doctor))(?:\\w+\\W+){0,2}?(?:benefit|plan)", # Matches 'benefit' or 'plan' within 2 words of 'care' or 'doctor'
+  "\\binsur\\W*policy\\b",               # Matches 'insurance policy' with optional spaces or other characters
+  "\\bhealth\\W*services\\b",            # Matches 'health services' with optional spaces or other characters
+  "(?=.*(?:hospital|doctor|clinic))(?:\\w+\\W+){0,3}?visit", # Matches 'visit' within 3 words of any specified terms
+  "(?=.*(?:mental|health|care))(?:\\w+\\W+){0,3}?support", # Matches 'support' within 3 words of any specified terms
+  "(?=.*wellness)(?=.*(?:program|benefit|plan))" # Matches 'wellness' with any of the specified terms
+)
+
+## Combine the regular expressions into a single pattern, separated by '|'
+benefits_medical_pros_pattern <- paste(benefits_medical_pros, collapse = "|")
+
+## Filter the comments to capture only those related to medical benefits
+benefits_medical_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(benefits_medical_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- Comments_df_pros %>%
+    mutate(medical_benefits = ifelse(comments %in% benefits_medical_pros_comments$comments, "Y",
+                             "N")) #This creates a new object, TEST, from Comments_df and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new "benefits" column
+
+##Repeat all this for Dental
+benefits_dental_pros <- c(
+  "\\bdental\\b",                       # Matches the word 'dental'
+  "\\bdental\\s?insurance\\b",          # Matches 'dental insurance' or 'dentalinsurance'
+  "\\b(?:dental\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'dental insurance'
+  "\\bdentist\\b",                      # Matches the word 'dentist'
+  "\\bdental\\s?plan\\b",               # Matches 'dental plan' or 'dentalplan'
+  "\\b(?:dental\\W+(?:\\w+\\W+){0,1}?plan)\\b", # Matches variations like 'dental plan'
+  "\\bdental\\s?coverage\\b",           # Matches 'dental coverage' or 'dentalcoverage'
+  "\\b(?:dental\\W+(?:\\w+\\W+){0,1}?coverage)\\b", # Matches variations like 'dental coverage'
+  "(?=.*coverage)(?=.*(?:dent|tooth|oral|mouth))", # Matches 'coverage' with any related terms
+  "(?=.*plan)(?=.*(?:dent|tooth|oral|mouth))",     # Matches 'plan' with any related terms
+  "(?=.*benefits)(?=.*(?:dent|tooth|oral|mouth))", # Matches 'benefits' with any related terms
+  "\\btooth\\b",                        # Matches the word 'tooth'
+  "\\bteeth\\b",                        # Matches the word 'teeth'
+  "\\boral\\b",                         # Matches the word 'oral'
+  "\\bmouth\\b",                        # Matches the word 'mouth'
+  "\\bordontic\\b",                     # Matches words like 'orthodontic' or 'periodontic'
+  "(?=.*(?:dental|dentist|tooth|teeth|oral|mouth))(?:\\w+\\W+){0,3}?care", # Matches 'care' within 3 words of any specified terms
+  "(?=.*(?:dental|dentist))(?:\\w+\\W+){0,2}?(?:visit|checkup|cleaning)" # Matches 'visit', 'checkup', or 'cleaning' within 2 words of 'dental' or 'dentist'
+)
+
+benefits_dental_pros_pattern <- paste(benefits_dental_pros, collapse = "|")
+
+## Filter the comments to capture only those related to dental insurance
+benefits_dental_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(benefits_dental_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(dental_benefits = ifelse(comments %in% benefits_dental_pros_comments$comments, "Y",
+                             "N")) 
+
+benefits_vision_pros <- c(
+  "\\bvision\\b",                       # Matches the word 'vision'
+  "\\bvision\\s?insurance\\b",          # Matches 'vision insurance' or 'visioninsurance'
+  "\\bvision\\s?plan\\b",               # Matches 'vision plan' or 'visionplan'
+  "\\bvision\\s?coverage\\b",           # Matches 'vision coverage' or 'visioncoverage'
+  "\\boptometrist\\b",                  # Matches the word 'optometrist'
+  "\\boptical\\b",                      # Matches the word 'optical'
+  "\\b(?:optometrist\\s?office|optometrist\\s?visit)\\b", # Matches 'optometrist office' or 'optometrist visit'
+  "\\beye\\b",                          # Matches the word 'eye'
+  "\\beyes\\b",                         # Matches the word 'eyes'
+  "\\beyewear\\b",                      # Matches the word 'eyewear'
+  "\\bglasses\\b",                      # Matches the word 'glasses'
+  "\\bcontacts\\b",                     # Matches the word 'contacts'
+  "\\b(?:eye\\s?exam|eye\\s?checkup)\\b", # Matches 'eye exam' or 'eye checkup'
+  "\\b(?:vision|optometrist)\\s?benefits\\b", # Matches 'vision benefits' or 'optometrist benefits'
+  "(?=.*vision)(?=.*(insurance|plan|coverage))", # Matches 'vision' with any of the specified terms
+  "(?=.*(vision|optometrist))(?:\\w+\\W+){0,2}?(visit|exam|checkup)", # Matches 'visit', 'exam', or 'checkup' within 2 words of 'vision' or 'optometrist'
+  "\\b(?:optical|vision)\\s?health\\b",   # Matches 'optical health' or 'vision health' but avoid health insurance context
+  "(?=.*vision)(?=.*(policy|provider|network))", # Matches 'vision' with any of the specified terms
+  "\\b(?:coverage|insurance)\\b(?!.*health)", # Matches 'coverage' or 'insurance' but not followed by 'health'
+  "(?=.*(eye|glasses|contacts|optical))(?!.*health)", # Matches comments containing eye-related terms but not followed by 'health'
+  "\\b(premiums?|deductibles?)\\s?(for|of)?\\s?(vision|optometrist)\\b" # Matches terms related to cost (e.g., premiums or deductibles) associated with vision
+)
+
+benefits_vision_pros_pattern <- paste(benefits_vision_pros, collapse = "|")
+
+## Filter the comments to capture only those related to vision insurance
+benefits_vision_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(benefits_vision_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(vision_benefits = ifelse(comments %in% benefits_vision_pros_comments$comments, "Y",
+                             "N")) 
+benefits_extra_pros <- c(
+  "\\bpet\\s?insurance\\b",             # Matches 'pet insurance' or 'petinsurance'
+  "\\b(?:pet\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'pet insurance'
+  "\\bpet\\s?coverage\\b",              # Matches 'pet coverage' or 'petcoverage'
+  "\\blegal\\s?insurance\\b",           # Matches 'legal insurance' or 'legalinsurance'
+  "\\b(?:legal\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'legal insurance'
+  "\\blaw\\s?insurance\\b",             # Matches 'law insurance' or 'lawinsurance'
+  "\\b(?:law\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'law insurance'
+  "\\btravel\\s?insurance\\b",          # Matches 'travel insurance' or 'travelinsurance'
+  "\\b(?:travel\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'travel insurance'
+  "\\baccident\\s?insurance\\b",        # Matches 'accident insurance' or 'accidentinsurance'
+  "\\b(?:accident\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'accident insurance'
+  "\\bhospital\\s?indemnity\\b",        # Matches 'hospital indemnity'
+  "\\b(?:hospital\\W+(?:\\w+\\W+){0,1}?indemnity)\\b", # Matches variations like 'hospital indemnity'
+  "\\bcritical\\s?illness\\b",          # Matches 'critical illness'
+  "\\b(?:critical\\W+(?:\\w+\\W+){0,1}?illness)\\b", # Matches variations like 'critical illness'
+  "\\bumbrella\\s?insurance\\b",        # Matches 'umbrella insurance' or 'umbrellainsurance'
+  "\\b(?:umbrella\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'umbrella insurance'
+  "(?=.*(?:pet|legal|law|travel|accident|hospital indemnity|critical illness|umbrella))(?:\\w+\\W+){0,2}?benefits", # Matches 'benefits' within 2 words of specified terms
+  "(?=.*insurance)(?=.*(?:pet|legal|law|travel|accident|hospital indemnity|critical illness|umbrella))", # Matches 'insurance' with any of the specified terms
+  "(?=.*coverage)(?=.*(?:pet|legal|law|travel|accident|hospital indemnity|critical illness|umbrella))", # Matches 'coverage' with any of the specified terms
+  "\\b(?:policy|plan|program)\\b(?!.*health)", # Matches 'policy', 'plan', or 'program' but not followed by 'health'
+  "(?=.*(policy|plan|program))(?=.*(?:pet|legal|law|travel|accident|hospital indemnity|critical illness|umbrella))" # Matches 'policy', 'plan', or 'program' with any of the specified terms
+)
+
+benefits_extra_pros_pattern <- paste(benefits_extra_pros, collapse = "|")
+
+## Filter the comments to capture only those related to extra insurance
+benefits_extra_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(benefits_extra_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(extra_benefits = ifelse(comments %in% benefits_extra_pros_comments$comments, "Y",
+                             "N")) 
+
+benefits_life_pros <- c(
+  "\\blife\\s?insurance\\b",             # Matches 'life insurance' or 'lifeinsurance'
+  "\\b(?:life\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'life insurance'
+  "\\blife\\s?coverage\\b",              # Matches 'life coverage' or 'lifecoverage'
+  "\\b(?:life\\W+(?:\\w+\\W+){0,1}?coverage)\\b", # Matches variations like 'life coverage'
+  "\\bad&d\\b",                          # Matches 'AD&D'
+  "\\baccidental\\s?death\\b",           # Matches 'accidental death' or 'accidentaldeath'
+  "\\b(?:accidental\\W+(?:\\w+\\W+){0,1}?death)\\b", # Matches variations like 'accidental death'
+  "\\bdismemberment\\b",                 # Matches the word 'dismemberment'
+  "\\b(?:accidental\\W+(?:\\w+\\W+){0,1}?dismemberment)\\b", # Matches variations like 'accidental dismemberment'
+  "\\bindemnity\\b",                     # Matches the word 'indemnity'
+  "\\bindemnity\\s?plan\\b",             # Matches 'indemnity plan' or 'indemnityplan'
+  "\\bdisability\\b",                    # Matches the word 'disability'
+  "\\bdisability\\s?insurance\\b",       # Matches 'disability insurance' or 'disabilityinsurance'
+  "\\b(?:disability\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'disability insurance'
+  "\\bdisability\\s?coverage\\b",        # Matches 'disability coverage' or 'disabilitycoverage'
+  "\\b(?:disability\\W+(?:\\w+\\W+){0,1}?coverage)\\b", # Matches variations like 'disability coverage'
+  "(?=.*life)(?=.*(insurance|coverage|plan))", # Matches 'life' with any of the specified terms
+  "(?=.*disability)(?=.*(insurance|coverage|plan))", # Matches 'disability' with any of the specified terms
+  "(?=.*ad&d)(?=.*(insurance|coverage|plan))", # Matches 'ad&d' with any of the specified terms
+  "(?=.*(indemnity|dismemberment))(?:\\w+\\W+){0,3}?(insurance|coverage|plan)", # Matches 'indemnity' or 'dismemberment' with 'insurance', 'coverage', or 'plan'
+  "\\baccidental\\s?(death|dismemberment|disability)\\b", # Matches 'accidental death', 'accidental dismemberment', or 'accidental disability'
+  "(?=.*accidental)(?=.*death|dismemberment|disability)", # Matches 'accidental' with 'death', 'dismemberment', or 'disability'
+  "\\b(?:coverage|insurance|plan)\\b(?!.*health)", # Matches 'coverage', 'insurance', or 'plan' but not followed by 'health'
+  "(?=.*(life|ad&d|disability|indemnity|dismemberment))(?!.*health)" # Matches specified terms but not followed by 'health'
+)
+
+benefits_life_pros_pattern <- paste(benefits_life_pros, collapse = "|")
+
+## Filter the comments to capture only those related to life insurance
+benefits_life_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(benefits_life_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(life_benefits = ifelse(comments %in% benefits_life_pros_comments$comments, "Y",
+                             "N")) 
+
+benefits_spending_accounts_pros <- c(
+  "\\bfsa\\b",                            # Matches 'FSA'
+  "\\bflexible\\s?spending\\s?account\\b",# Matches 'flexible spending account' or variations
+  "\\bflexible\\s?spending\\s?accounts\\b",# Matches 'flexible spending accounts' or variations
+  "\\bdependent\\s?care\\s?fsa\\b",       # Matches 'dependent care FSA' or 'dependentcare FSA'
+  "\\bdependent\\s?care\\s?flexible\\s?spending\\s?account\\b", # Matches 'dependent care flexible spending account' or variations
+  "\\bhsa\\b",                            # Matches 'HSA'
+  "\\bhealth\\s?savings\\s?account\\b",   # Matches 'health savings account' or variations
+  "\\bhealth\\s?savings\\s?accounts\\b",  # Matches 'health savings accounts' or variations
+  "\\bcommuter\\s?benefits\\b",           # Matches 'commuter benefits' or variations
+  "\\btransportation\\s?benefits\\b",     # Matches 'transportation benefits' or variations
+  "\\btransit\\s?benefits\\b",            # Matches 'transit benefits' or variations
+  "\\bparking\\s?benefits\\b",            # Matches 'parking benefits' or variations
+  "\\bcommuter\\s?reimbursement\\b",      # Matches 'commuter reimbursement' or variations
+  "\\btransit\\s?reimbursement\\b",       # Matches 'transit reimbursement' or variations
+  "\\bparking\\s?reimbursement\\b",       # Matches 'parking reimbursement' or variations
+  "\\bcommuter\\s?savings\\s?account\\b", # Matches 'commuter savings account' or variations
+  "\\btransit\\s?savings\\s?account\\b",  # Matches 'transit savings account' or variations
+  "\\bparking\\s?savings\\s?account\\b",  # Matches 'parking savings account' or variations
+  "(?=.*fsa)(?=.*(dependent|care|flexible|spending|account))", # Matches 'FSA' with any of the specified terms
+  "(?=.*hsa)(?=.*(health|savings|account))", # Matches 'HSA' with any of the specified terms
+  "(?=.*commuter)(?=.*(benefit|reimbursement|savings|account))", # Matches 'commuter' with any of the specified terms
+  "(?=.*transit)(?=.*(benefit|reimbursement|savings|account))", # Matches 'transit' with any of the specified terms
+  "(?=.*parking)(?=.*(benefit|reimbursement|savings|account))", # Matches 'parking' with any of the specified terms
+  "\\b(?:account|benefit|reimbursement)\\b(?!.*health)", # Matches 'account', 'benefit', or 'reimbursement' but not followed by 'health'
+  "(?=.*(fsa|hsa|commuter|transit|parking|dependent))(?!.*health)" # Matches specified terms but not followed by 'health'
+)
+
+benefits_spending_accounts_pros_pattern <- paste(benefits_spending_accounts_pros, collapse = "|")
+
+## Filter the comments to capture only those related to spending accounts
+benefits_spending_accounts_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(benefits_spending_accounts_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(spending_accounts_benefits = ifelse(comments %in% benefits_spending_accounts_pros_comments$comments, "Y",
+                             "N")) 
+benefits_family_pros <- c(
+  "\\bfamily\\s?(planning|forming)\\b",    # Matches 'family planning' or 'family forming'
+  "\\bivf\\b",                             # Matches 'IVF'
+  "\\bin\\s?vitro\\s?fertilization\\b",    # Matches 'in vitro fertilization'
+  "\\badoption\\b",                        # Matches 'adoption'
+  "(?=.*family)(?=.*(planning|forming))",  # Matches 'family' with 'planning' or 'forming'
+  "(?=.*ivf|in\\s?vitro\\s?fertilization)", # Matches 'IVF' or 'in vitro fertilization'
+  "(?=.*adoption)"                        # Matches 'adoption'
+)
+
+benefits_family_pros_pattern <- paste(benefits_family_pros, collapse = "|")
+
+## Filter the comments to capture only those related to family forming benefits 
+benefits_family_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(benefits_family_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(family_forming_benefits = ifelse(comments %in% benefits_family_pros_comments$comments, "Y",
+                             "N")) 
+
+benefits_pto_pros <- c(
+  "\\bpto\\b",                              # Matches 'PTO'
+  "\\btime\\s?off\\b",                      # Matches 'time off'
+  "\\bvacation\\b",                         # Matches 'vacation'
+  "\\bsick\\b",                             # Matches 'sick'
+  "\\bbereavement\\b",                      # Matches 'bereavement'
+  "(?=.*pto)",                              # Matches 'PTO'
+  "(?=.*time\\s?off)",                      # Matches 'time off'
+  "(?=.*vacation)",                         # Matches 'vacation'
+  "(?=.*sick)",                             # Matches 'sick'
+  "(?=.*bereavement)"                       # Matches 'bereavement'
+)
+
+benefits_pto_pros_pattern <- paste(benefits_pto_pros, collapse = "|")
+
+## Filter the comments to capture only those related to time off
+benefits_pto_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(benefits_pto_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(PTO_benefits = ifelse(comments %in% benefits_pto_pros_comments$comments, "Y",
+                             "N")) 
+
+benefits_leave_pros <- c(
+  "\\bmaternity\\b",                        # Matches 'maternity'
+  "\\bpaternity\\b",                        # Matches 'paternity'
+  "\\bparental\\b",                         # Matches 'parental'
+  "\\bsabbatical\\b",                       # Matches 'sabbatical'
+  "\\bloa\\b",                              # Matches 'LOA'
+  "\\bleave\\b",                            # Matches 'leave'
+  "(?=.*maternity)",                        # Matches 'maternity'
+  "(?=.*paternity)",                        # Matches 'paternity'
+  "(?=.*parental)",                         # Matches 'parental'
+  "(?=.*sabbatical)",                       # Matches 'sabbatical'
+  "(?=.*loa)",                              # Matches 'LOA'
+  "(?=.*leave)"                             # Matches 'leave'
+)
+
+benefits_leave_pros_pattern <- paste(benefits_leave_pros, collapse = "|")
+
+## Filter the comments to capture only those related to LOAs
+benefits_leave_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(benefits_leave_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(leave_benefits = ifelse(comments %in% benefits_leave_pros_comments$comments, "Y",
+                             "N")) 
+
+benefits_financial_pros <- c(
+  "\\b401\\b",                             # Matches '401'
+  "\\b401k\\b",                            # Matches '401k'
+  "\\bmatch\\b",                           # Matches 'match'
+  "\\bretirement\\b",                      # Matches 'retirement'
+  "\\broth\\b",                            # Matches 'roth'
+  "\\b529\\b",                             # Matches '529'
+  "\\bplanning\\b",                        # Matches 'planning'
+  "\\btax\\b",                             # Matches 'tax'
+  "(?=.*401)",                             # Matches '401'
+  "(?=.*401k)",                            # Matches '401k'
+  "(?=.*match)",                           # Matches 'match'
+  "(?=.*retirement)",                      # Matches 'retirement'
+  "(?=.*roth)",                            # Matches 'roth'
+  "(?=.*529)",                             # Matches '529'
+  "(?=.*planning)",                        # Matches 'planning'
+  "(?=.*tax)"                              # Matches 'tax'
+)
+
+benefits_financial_pros_pattern <- paste(benefits_financial_pros, collapse = "|")
+
+## Filter the comments to capture only those related to financial benefits
+benefits_financial_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(benefits_financial_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(financial_benefits = ifelse(comments %in% benefits_financial_pros_comments$comments, "Y",
+                             "N")) 
+
+benefits_perks_pros <- c(
+  "\\bgym\\b",                             # Matches 'gym'
+  "\\bwellbeing\\b",                       # Matches 'wellbeing'
+  "\\bdiscounts?\\b",                      # Matches 'discount' or 'discounts'
+  "\\beducation\\b",                       # Matches 'education'
+  "\\bschool\\b",                          # Matches 'school'
+  "\\btuition\\b",                         # Matches 'tuition'
+  "\\bceu\\b",                             # Matches 'CEU'
+  "(?=.*gym)",                             # Matches 'gym'
+  "(?=.*wellbeing)",                       # Matches 'wellbeing'
+  "(?=.*discount)",                        # Matches 'discount'
+  "(?=.*education)",                       # Matches 'education'
+  "(?=.*school)",                          # Matches 'school'
+  "(?=.*tuition)",                         # Matches 'tuition'
+  "(?=.*ceu)"                              # Matches 'CEU'
+)
+
+benefits_perks_pros_pattern <- paste(benefits_perks_pros, collapse = "|")
+
+## Filter the comments to capture only those related to perks
+benefits_perks_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(benefits_perks_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(perks_benefits = ifelse(comments %in% benefits_perks_pros_comments$comments, "Y",
+                             "N")) 
+
+TEST_pros <- TEST_pros %>%
+    mutate(benefits_insurance = ifelse(medical_benefits == "Y" | dental_benefits == "Y" | vision_benefits == "Y" | extra_benefits == "Y" | life_benefits == "Y" | spending_accounts_benefits == "Y", "Y", "N"))
+
+TEST_pros <- TEST_pros %>%
+    mutate(benefits_time_off = ifelse(PTO_benefits == "Y" | leave_benefits == "Y", "Y", "N"))
+
+TEST_pros <- TEST_pros %>%
+    mutate(benefits_all = ifelse(benefits_insurance == "Y" | benefits_time_off == "Y" | financial_benefits == "Y" | perks_benefits == "Y", "Y", "N"))
+
+##### Compensation ######
+   ## comp_pay: salary, hourly, pay, comp, compensation
+   ## comp_extra: bonus, incentive, stip, equity, stock, espp, ltip, 
+
+compensation_pros <- c(
+  "\\bsalary\\b",                          # Matches 'salary'
+  "\\bhourly\\b",                          # Matches 'hourly'
+  "\\bpay\\b",                             # Matches 'pay'
+  "\\bcomp\\b",                            # Matches 'comp'
+  "\\bcompensation\\b",                    # Matches 'compensation'
+  "\\bwages?\\b",                          # Matches 'wage' or 'wages'
+  "\\bincome\\b",                          # Matches 'income'
+  "\\bearnings?\\b",                       # Matches 'earning' or 'earnings'
+  "\\bpayscale\\b",                        # Matches 'payscale'
+  "\\bpaycheck\\b",                        # Matches 'paycheck'
+  "\\bpayslip\\b",                         # Matches 'payslip'
+  "\\bremuneration\\b",                    # Matches 'remuneration'
+  "\\bbase\\s?pay\\b",                     # Matches 'base pay'
+  "\\bannual\\s?pay\\b",                   # Matches 'annual pay'
+  "\\bmonthly\\s?pay\\b",                  # Matches 'monthly pay'
+  "\\bweekly\\s?pay\\b",                   # Matches 'weekly pay'
+  "\\bhourly\\s?wage\\b",                  # Matches 'hourly wage'
+  "\\bpay\\s?rate\\b",                     # Matches 'pay rate'
+  "\\bpayscale\\b",                        # Matches 'payscale'
+  "\\bpayslip\\b",                         # Matches 'payslip'
+  "\\bpaycheck\\b",                        # Matches 'paycheck'
+  "\\bpayscale\\b",                        # Matches 'payscale'
+  "(?=.*salary)(?=.*increase|raise|adjustment)", # Matches 'salary' with 'increase', 'raise', or 'adjustment'
+  "(?=.*hourly)(?=.*rate)",                # Matches 'hourly' with 'rate'
+  "(?=.*pay)(?=.*raise|increase|adjustment)", # Matches 'pay' with 'raise', 'increase', or 'adjustment'
+  "(?=.*compensation)(?=.*package|review|plan)", # Matches 'compensation' with 'package', 'review', or 'plan'
+  "(?=.*wage)(?=.*increase|rate|adjustment)", # Matches 'wage' with 'increase', 'rate', or 'adjustment'
+  "(?=.*income)(?=.*increase|raise|adjustment)", # Matches 'income' with 'increase', 'raise', or 'adjustment'
+  "(?=.*earnings)(?=.*increase|raise|adjustment)", # Matches 'earnings' with 'increase', 'raise', or 'adjustment'
+  "(?=.*remuneration)(?=.*package|review|plan)", # Matches 'remuneration' with 'package', 'review', or 'plan'
+  "(?=.*base)(?=.*pay)",                   # Matches 'base' with 'pay'
+  "(?=.*annual)(?=.*pay)",                 # Matches 'annual' with 'pay'
+  "(?=.*monthly)(?=.*pay)",                # Matches 'monthly' with 'pay'
+  "(?=.*weekly)(?=.*pay)",                 # Matches 'weekly' with 'pay'
+  "(?=.*hourly)(?=.*wage)",                # Matches 'hourly' with 'wage'
+  "(?=.*pay)(?=.*rate)"                   # Matches 'pay' with 'rate'
+)
+
+compensation_pros_pattern <- paste(compensation_pros, collapse = "|")
+
+## Filter the comments to capture only those related to base compensation
+compensation_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(compensation_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(base_compensation = ifelse(comments %in% compensation_pros_comments$comments, "Y",
+                             "N")) 
+
+additional_compensation_pros <- c(
+  "\\bbonus\\b",                           # Matches 'bonus'
+  "\\bbonuses\\b",                         # Matches 'bonuses'
+  "\\bequity\\b",                          # Matches 'equity'
+  "\\bstock\\b",                           # Matches 'stock'
+  "\\bstocks\\b",                          # Matches 'stocks'
+  "\\bshares?\\b",                         # Matches 'share' or 'shares'
+  "\\boptions?\\b",                        # Matches 'option' or 'options'
+  "\\breserved\\s?stock\\b",               # Matches 'reserved stock'
+  "\\brestricted\\s?stock\\b",             # Matches 'restricted stock'
+  "\\bgrants?\\b",                         # Matches 'grant' or 'grants'
+  "\\bvesting\\b",                         # Matches 'vesting'
+  "\\bprofit\\s?sharing\\b",               # Matches 'profit sharing'
+  "\\bincentives?\\b",                     # Matches 'incentive' or 'incentives'
+  "\\bperformance\\s?bonus\\b",            # Matches 'performance bonus'
+  "\\bannual\\s?bonus\\b",                 # Matches 'annual bonus'
+  "\\bsigning\\s?bonus\\b",                # Matches 'signing bonus'
+  "\\bretention\\s?bonus\\b",              # Matches 'retention bonus'
+  "\\bvariable\\s?pay\\b",                 # Matches 'variable pay'
+  "\\btax\\s?deferral\\b",                 # Matches 'tax deferral'
+  "\\bprofit\\s?distribution\\b",          # Matches 'profit distribution'
+  "(?=.*bonus)(?=.*annual|performance|signing|retention)", # Matches 'bonus' with 'annual', 'performance', 'signing', or 'retention'
+  "(?=.*equity)(?=.*grant|stock|vesting)", # Matches 'equity' with 'grant', 'stock', or 'vesting'
+  "(?=.*stock)(?=.*option|share|vesting|restricted|reserved)", # Matches 'stock' with 'option', 'share', 'vesting', 'restricted', or 'reserved'
+  "(?=.*profit)(?=.*sharing|distribution)", # Matches 'profit' with 'sharing' or 'distribution'
+  "(?=.*incentive)(?=.*plan|program)",    # Matches 'incentive' with 'plan' or 'program'
+  "(?=.*variable)(?=.*pay)",              # Matches 'variable' with 'pay'
+  "(?=.*tax)(?=.*deferral)"               # Matches 'tax' with 'deferral'
+)
+
+additional_compensation_pros_pattern <- paste(additional_compensation_pros, collapse = "|")
+
+## Filter the comments to capture only those related to additional compensation
+additional_compensation_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(additional_compensation_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(additional_compensation = ifelse(comments %in% additional_compensation_pros_comments$comments, "Y",
+                             "N")) 
+
+TEST_pros <- TEST_pros %>%
+    mutate(compensation = ifelse(base_compensation == "Y" | additional_compensation == "Y", "Y", "N"))
+
+###Career Development###
+
+career_development_pros <- c(
+  "\\bpromotion\\b",                       # Matches 'promotion'
+  "\\bpromotions\\b",                      # Matches 'promotions'
+  "\\bpromote\\b",                         # Matches 'promote'
+  "\\bpromoted\\b",                        # Matches 'promoted'
+  "\\bprogress\\b",                        # Matches 'progress'
+  "\\bprogression\\b",                     # Matches 'progression'
+  "\\badvance\\b",                         # Matches 'advance'
+  "\\badvancement\\b",                     # Matches 'advancement'
+  "\\badvancing\\b",                       # Matches 'advancing'
+  "\\btraining\\b",                        # Matches 'training'
+  "\\btrainings\\b",                       # Matches 'trainings'
+  "\\bdevelop\\b",                         # Matches 'develop'
+  "\\bdevelopment\\b",                     # Matches 'development'
+  "\\bdeveloped\\b",                       # Matches 'developed'
+  "\\bcareer\\b",                          # Matches 'career'
+  "\\bcareers\\b",                         # Matches 'careers'
+  "\\bcareer\\s?path\\b",                  # Matches 'career path'
+  "\\bcareer\\s?growth\\b",                # Matches 'career growth'
+  "\\bcareer\\s?advancement\\b",           # Matches 'career advancement'
+  "\\bprofessional\\s?development\\b",     # Matches 'professional development'
+  "\\bskills\\b",                          # Matches 'skills'
+  "\\bskill\\s?development\\b",            # Matches 'skill development'
+  "\\bcoaching\\b",                        # Matches 'coaching'
+  "\\bmentoring\\b",                       # Matches 'mentoring'
+  "\\bmentor\\b",                          # Matches 'mentor'
+  "\\bmentorship\\b",                      # Matches 'mentorship'
+  "\\bworkshop\\b",                        # Matches 'workshop'
+  "\\bworkshops\\b",                       # Matches 'workshops'
+  "\\bcertification\\b",                   # Matches 'certification'
+  "\\bcertifications\\b",                  # Matches 'certifications'
+  "\\bseminar\\b",                         # Matches 'seminar'
+  "\\bseminars\\b",                        # Matches 'seminars'
+  "\\bconference\\b",                      # Matches 'conference'
+  "\\bconferences\\b",                     # Matches 'conferences'
+  "(?=.*promotion)(?=.*opportunity)",      # Matches 'promotion' with 'opportunity'
+  "(?=.*career)(?=.*progression|path|growth|advancement)", # Matches 'career' with 'progression', 'path', 'growth', or 'advancement'
+  "(?=.*professional)(?=.*development|growth)", # Matches 'professional' with 'development' or 'growth'
+  "(?=.*skills?)(?=.*development|training)", # Matches 'skill' or 'skills' with 'development' or 'training'
+  "(?=.*mentor)(?=.*program|ship|opportunity)", # Matches 'mentor' with 'program', 'ship', or 'opportunity'
+  "(?=.*certification)(?=.*program|training)", # Matches 'certification' with 'program' or 'training'
+  "(?=.*training)(?=.*program|opportunity|session)", # Matches 'training' with 'program', 'opportunity', or 'session'
+  "(?=.*workshop)(?=.*program|session)",    # Matches 'workshop' with 'program' or 'session'
+  "(?=.*conference)(?=.*attendance|session|event)", # Matches 'conference' with 'attendance', 'session', or 'event'
+  "(?=.*seminar)(?=.*attendance|session|event)"    # Matches 'seminar' with 'attendance', 'session', or 'event'
+)
+
+career_development_pros_pattern <- paste(career_development_pros, collapse = "|")
+
+## Filter the comments to capture only those related to professional development
+career_development_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(career_development_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(career_development = ifelse(comments %in% career_development_pros_comments$comments, "Y",
+                             "N")) 
+
+###Management###
+  ##  management_direct: manager, boss, supervisor, 
+   ## management_senior: c-suite, execs, executive, executives, c suite, CEO, CFO, CIO, CMO, senior | sr, BOD, board, directors, 
+
+direct_manager_pros<- c(
+  "\\bmanager\\b",                       # Matches 'manager'
+  "\\bmanagers\\b",                      # Matches 'managers'
+  "\\bboss\\b",                          # Matches 'boss'
+  "\\bbosses\\b",                        # Matches 'bosses'
+  "\\bsupervisor\\b",                    # Matches 'supervisor'
+  "\\bsupervisors\\b",                   # Matches 'supervisors'
+  "\\bsupervise\\b",                     # Matches 'supervise'
+  "\\bsupervised\\b",                    # Matches 'supervised'
+  "\\bteam\\s?lead\\b",                  # Matches 'team lead'
+  "\\bteam\\s?leader\\b",                # Matches 'team leader'
+  "\\bline\\s?manager\\b",               # Matches 'line manager'
+  "\\bimmediate\\s?supervisor\\b",       # Matches 'immediate supervisor'
+  "\\bdirect\\s?supervisor\\b",          # Matches 'direct supervisor'
+  "\\bdirect\\s?manager\\b",             # Matches 'direct manager'
+  "\\bmy\\s?manager\\b",                 # Matches 'my manager'
+  "\\bmy\\s?supervisor\\b",              # Matches 'my supervisor'
+  "\\bteam\\s?supervisor\\b",            # Matches 'team supervisor'
+  "\\bgroup\\s?supervisor\\b",           # Matches 'group supervisor'
+  "\\bdepartment\\s?manager\\b",         # Matches 'department manager'
+  "\\bwork\\s?supervisor\\b",            # Matches 'work supervisor'
+  "\\bwork\\s?manager\\b",               # Matches 'work manager'
+  "(?=.*manager)(?=.*performance|feedback|support)", # Matches 'manager' with 'performance', 'feedback', or 'support'
+  "(?=.*supervisor)(?=.*performance|feedback|support)", # Matches 'supervisor' with 'performance', 'feedback', or 'support'
+  "(?=.*boss)(?=.*performance|feedback|support)", # Matches 'boss' with 'performance', 'feedback', or 'support'
+  "(?=.*leader)(?=.*performance|feedback|support)", # Matches 'leader' with 'performance', 'feedback', or 'support'
+  "(?=.*lead)(?=.*performance|feedback|support)"    # Matches 'lead' with 'performance', 'feedback', or 'support'
+)
+
+direct_manager_pros_pattern <- paste(direct_manager_pros, collapse = "|")
+
+## Filter the comments to capture only those related to management
+direct_manager_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(direct_manager_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(direct_manager = ifelse(comments %in% direct_manager_pros_comments$comments, "Y",
+                             "N")) 
+
+senior_management_pros <- c(
+  "\\bexecutive\\b",                      # Matches 'executive'
+  "\\bexecutives\\b",                     # Matches 'executives'
+  "\\bmanagement\\b",                     # Matches 'management'
+ "\\bdan\\b",                             # Matches 'dan' - saw this in a few comments related to sr. mgt. must be a name - recommend doing this for all sr. exec names in the future
+  "\\bexecutive\\s?team\\b",              # Matches 'executive team'
+  "\\bsenior\\s?management\\b",           # Matches 'senior management'
+  "\\bsenior\\s?leaders?\\b",             # Matches 'senior leader' or 'senior leaders'
+  "\\bboard\\b",                          # Matches 'board'
+  "\\bboard\\s?of\\s?directors\\b",       # Matches 'board of directors'
+  "\\bdirectors?\\b",                     # Matches 'director' or 'directors'
+  "\\bchief\\s?executive\\s?officer\\b",  # Matches 'chief executive officer'
+  "\\bchief\\s?financial\\s?officer\\b",  # Matches 'chief financial officer'
+  "\\bchief\\s?operating\\s?officer\\b",  # Matches 'chief operating officer'
+  "\\bchief\\s?technology\\s?officer\\b", # Matches 'chief technology officer'
+  "\\bceo\\b",                            # Matches 'CEO' - could also find names for these roles and fill in
+  "\\bcfo\\b",                            # Matches 'CFO'
+  "\\bcoo\\b",                            # Matches 'COO'
+  "\\bcto\\b",                            # Matches 'CTO'
+  "\\bvice\\s?president\\b",              # Matches 'vice president'
+  "\\bvice\\s?presidents\\b",             # Matches 'vice presidents'
+  "\\bvp\\b",                             # Matches 'VP'
+  "\\bpresident\\b",                      # Matches 'president'
+  "\\bc-suite\\b",                        # Matches 'C-suite'
+  "\\bhead\\s?office\\b",                 # Matches 'head office'
+  "\\bexecutive\\s?leadership\\b",        # Matches 'executive leadership'
+  "\\bcorporate\\s?leadership\\b",        # Matches 'corporate leadership'
+  "(?=.*executive)(?=.*decision)",        # Matches 'executive' with 'decision'
+  "(?=.*senior)(?=.*leadership|management|team)", # Matches 'senior' with 'leadership', 'management', or 'team'
+  "(?=.*board)(?=.*member|meeting|decision|director)", # Matches 'board' with 'member', 'meeting', 'decision', or 'director'
+  "(?=.*chief)(?=.*officer|executive)",   # Matches 'chief' with 'officer' or 'executive'
+  "(?=.*c-suite)(?=.*leadership|team)",   # Matches 'C-suite' with 'leadership' or 'team'
+  "(?=.*corporate)(?=.*decision|leadership)" # Matches 'corporate' with 'decision' or 'leadership'
+)
+
+senior_management_pros_pattern <- paste(senior_management_pros, collapse = "|")
+
+## Filter the comments to capture only those related to compensation
+senior_management_pros_comments <- as.data.frame(
+  Comments_df_pros[grep(senior_management_pros_pattern, Comments_df_pros$comments, perl = TRUE), ]
+)
+
+TEST_pros <- TEST_pros %>%
+    mutate(senior_management = ifelse(comments %in% senior_management_pros_comments$comments, "Y",
+                             "N")) 
+
+TEST_pros <- TEST_pros %>%
+    mutate(management = ifelse(senior_management == "Y" | direct_manager == "Y", "Y", "N"))
+
+TEST_pros <- TEST_pros %>%
+    mutate(Other = apply(TEST_pros, 1, function(y){ ifelse("Y" %in% y, "N", "Y")}))
+```
+    
+    
+Do a little Copy Pasta and a find/replace of Pros with cons
+```{r}
+benefits_medical_cons <- c(
+  "\\bmedical\\b",                       # Matches the word 'medical'
+  "\\bprescription\\b",                  # Matches the word 'prescription'
+  "\\brx\\b",                            # Matches the abbreviation 'rx'
+  "\\bhealth\\b",                        # Matches the word 'health'
+  "\\bhealthcare\\b",                    # Matches the word 'healthcare'
+   "\\bhospital\\b",                      # Matches the word 'hospital'
+  "\\bdoctor\\b",                        # Matches the word 'doctor'
+  "\\bdependent\\b",                     # Matches the word 'dependent'
+  "\\bcancer\\b",                        # Matches the word 'cancer'
+  "\\bEAP\\b",                           # Matches the abbreviation 'EAP'
+  "\\bmental\\b",                        # Matches the word 'mental'
+  "\\bhealth\\s?care\\b",                # Matches 'health care' or 'healthcare'
+  "\\b(?:health\\W+(?:\\w+\\W+){0,1}?care)\\b", # Matches variations like 'health care'
+  "(?=.*coverage)(?=.*(?:medic|deduct|prescrip|insur|drug|health|dependent))", # Matches combinations with 'coverage' and related terms
+  "\\bmedic\\W*benefits\\b",             # Matches 'medical benefits' with optional spaces or other characters
+  "\\bprescrip\\W*plan\\b",              # Matches 'prescription plan' with optional spaces or other characters
+  "(?=.*benefits)(?=.*(?:health|medical))", # Matches 'benefits' with any of the specified terms
+  "(?=.*(?:medical|health|prescrip))(?:\\w+\\W+){0,2}?coverage", # Matches 'coverage' within 2 words of any specified terms
+  "(?=.*plan)(?=.*(?:medic|health|insur|benefit))", # Matches 'plan' with any of the specified terms
+  "(?=.*(?:care|doctor))(?:\\w+\\W+){0,2}?(?:benefit|plan)", # Matches 'benefit' or 'plan' within 2 words of 'care' or 'doctor'
+  "\\binsur\\W*policy\\b",               # Matches 'insurance policy' with optional spaces or other characters
+  "\\bhealth\\W*services\\b",            # Matches 'health services' with optional spaces or other characters
+  "(?=.*(?:hospital|doctor|clinic))(?:\\w+\\W+){0,3}?visit", # Matches 'visit' within 3 words of any specified terms
+  "(?=.*(?:mental|health|care))(?:\\w+\\W+){0,3}?support", # Matches 'support' within 3 words of any specified terms
+  "(?=.*wellness)(?=.*(?:program|benefit|plan))" # Matches 'wellness' with any of the specified terms
+)
+
+## Combine the regular expressions into a single pattern, separated by '|'
+benefits_medical_cons_pattern <- paste(benefits_medical_cons, collapse = "|")
+
+## Filter the comments to capture only those related to medical benefits
+benefits_medical_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(benefits_medical_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- Comments_df_cons %>%
+    mutate(medical_benefits = ifelse(comments %in% benefits_medical_cons_comments$comments, "Y",
+                             "N")) #This creates a new object, TEST, from Comments_df and if any of the comments in the "comments" column match (%in%) the comments exactly, they get a "Y". If not they get a "N" in the new "benefits" column
+
+##Repeat all this for Dental
+benefits_dental_cons <- c(
+  "\\bdental\\b",                       # Matches the word 'dental'
+  "\\bdental\\s?insurance\\b",          # Matches 'dental insurance' or 'dentalinsurance'
+  "\\b(?:dental\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'dental insurance'
+  "\\bdentist\\b",                      # Matches the word 'dentist'
+  "\\bdental\\s?plan\\b",               # Matches 'dental plan' or 'dentalplan'
+  "\\b(?:dental\\W+(?:\\w+\\W+){0,1}?plan)\\b", # Matches variations like 'dental plan'
+  "\\bdental\\s?coverage\\b",           # Matches 'dental coverage' or 'dentalcoverage'
+  "\\b(?:dental\\W+(?:\\w+\\W+){0,1}?coverage)\\b", # Matches variations like 'dental coverage'
+  "(?=.*coverage)(?=.*(?:dent|tooth|oral|mouth))", # Matches 'coverage' with any related terms
+  "(?=.*plan)(?=.*(?:dent|tooth|oral|mouth))",     # Matches 'plan' with any related terms
+  "(?=.*benefits)(?=.*(?:dent|tooth|oral|mouth))", # Matches 'benefits' with any related terms
+  "\\btooth\\b",                        # Matches the word 'tooth'
+  "\\bteeth\\b",                        # Matches the word 'teeth'
+  "\\boral\\b",                         # Matches the word 'oral'
+  "\\bmouth\\b",                        # Matches the word 'mouth'
+  "\\bordontic\\b",                     # Matches words like 'orthodontic' or 'periodontic'
+  "(?=.*(?:dental|dentist|tooth|teeth|oral|mouth))(?:\\w+\\W+){0,3}?care", # Matches 'care' within 3 words of any specified terms
+  "(?=.*(?:dental|dentist))(?:\\w+\\W+){0,2}?(?:visit|checkup|cleaning)" # Matches 'visit', 'checkup', or 'cleaning' within 2 words of 'dental' or 'dentist'
+)
+
+benefits_dental_cons_pattern <- paste(benefits_dental_cons, collapse = "|")
+
+## Filter the comments to capture only those related to dental insurance
+benefits_dental_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(benefits_dental_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(dental_benefits = ifelse(comments %in% benefits_dental_cons_comments$comments, "Y",
+                             "N")) 
+
+benefits_vision_cons <- c(
+  "\\bvision\\b",                       # Matches the word 'vision'
+  "\\bvision\\s?insurance\\b",          # Matches 'vision insurance' or 'visioninsurance'
+  "\\bvision\\s?plan\\b",               # Matches 'vision plan' or 'visionplan'
+  "\\bvision\\s?coverage\\b",           # Matches 'vision coverage' or 'visioncoverage'
+  "\\boptometrist\\b",                  # Matches the word 'optometrist'
+  "\\boptical\\b",                      # Matches the word 'optical'
+  "\\b(?:optometrist\\s?office|optometrist\\s?visit)\\b", # Matches 'optometrist office' or 'optometrist visit'
+  "\\beye\\b",                          # Matches the word 'eye'
+  "\\beyes\\b",                         # Matches the word 'eyes'
+  "\\beyewear\\b",                      # Matches the word 'eyewear'
+  "\\bglasses\\b",                      # Matches the word 'glasses'
+  "\\bcontacts\\b",                     # Matches the word 'contacts'
+  "\\b(?:eye\\s?exam|eye\\s?checkup)\\b", # Matches 'eye exam' or 'eye checkup'
+  "\\b(?:vision|optometrist)\\s?benefits\\b", # Matches 'vision benefits' or 'optometrist benefits'
+  "(?=.*vision)(?=.*(insurance|plan|coverage))", # Matches 'vision' with any of the specified terms
+  "(?=.*(vision|optometrist))(?:\\w+\\W+){0,2}?(visit|exam|checkup)", # Matches 'visit', 'exam', or 'checkup' within 2 words of 'vision' or 'optometrist'
+  "\\b(?:optical|vision)\\s?health\\b",   # Matches 'optical health' or 'vision health' but avoid health insurance context
+  "(?=.*vision)(?=.*(policy|provider|network))", # Matches 'vision' with any of the specified terms
+  "\\b(?:coverage|insurance)\\b(?!.*health)", # Matches 'coverage' or 'insurance' but not followed by 'health'
+  "(?=.*(eye|glasses|contacts|optical))(?!.*health)", # Matches comments containing eye-related terms but not followed by 'health'
+  "\\b(premiums?|deductibles?)\\s?(for|of)?\\s?(vision|optometrist)\\b" # Matches terms related to cost (e.g., premiums or deductibles) associated with vision
+)
+
+benefits_vision_cons_pattern <- paste(benefits_vision_cons, collapse = "|")
+
+## Filter the comments to capture only those related to vision insurance
+benefits_vision_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(benefits_vision_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(vision_benefits = ifelse(comments %in% benefits_vision_cons_comments$comments, "Y",
+                             "N")) 
+benefits_extra_cons <- c(
+  "\\bpet\\s?insurance\\b",             # Matches 'pet insurance' or 'petinsurance'
+  "\\b(?:pet\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'pet insurance'
+  "\\bpet\\s?coverage\\b",              # Matches 'pet coverage' or 'petcoverage'
+  "\\blegal\\s?insurance\\b",           # Matches 'legal insurance' or 'legalinsurance'
+  "\\b(?:legal\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'legal insurance'
+  "\\blaw\\s?insurance\\b",             # Matches 'law insurance' or 'lawinsurance'
+  "\\b(?:law\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'law insurance'
+  "\\btravel\\s?insurance\\b",          # Matches 'travel insurance' or 'travelinsurance'
+  "\\b(?:travel\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'travel insurance'
+  "\\baccident\\s?insurance\\b",        # Matches 'accident insurance' or 'accidentinsurance'
+  "\\b(?:accident\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'accident insurance'
+  "\\bhospital\\s?indemnity\\b",        # Matches 'hospital indemnity'
+  "\\b(?:hospital\\W+(?:\\w+\\W+){0,1}?indemnity)\\b", # Matches variations like 'hospital indemnity'
+  "\\bcritical\\s?illness\\b",          # Matches 'critical illness'
+  "\\b(?:critical\\W+(?:\\w+\\W+){0,1}?illness)\\b", # Matches variations like 'critical illness'
+  "\\bumbrella\\s?insurance\\b",        # Matches 'umbrella insurance' or 'umbrellainsurance'
+  "\\b(?:umbrella\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'umbrella insurance'
+  "(?=.*(?:pet|legal|law|travel|accident|hospital indemnity|critical illness|umbrella))(?:\\w+\\W+){0,2}?benefits", # Matches 'benefits' within 2 words of specified terms
+  "(?=.*insurance)(?=.*(?:pet|legal|law|travel|accident|hospital indemnity|critical illness|umbrella))", # Matches 'insurance' with any of the specified terms
+  "(?=.*coverage)(?=.*(?:pet|legal|law|travel|accident|hospital indemnity|critical illness|umbrella))", # Matches 'coverage' with any of the specified terms
+  "\\b(?:policy|plan|program)\\b(?!.*health)", # Matches 'policy', 'plan', or 'program' but not followed by 'health'
+  "(?=.*(policy|plan|program))(?=.*(?:pet|legal|law|travel|accident|hospital indemnity|critical illness|umbrella))" # Matches 'policy', 'plan', or 'program' with any of the specified terms
+)
+
+benefits_extra_cons_pattern <- paste(benefits_extra_cons, collapse = "|")
+
+## Filter the comments to capture only those related to extra insurance
+benefits_extra_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(benefits_extra_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(extra_benefits = ifelse(comments %in% benefits_extra_cons_comments$comments, "Y",
+                             "N")) 
+
+benefits_life_cons <- c(
+  "\\blife\\s?insurance\\b",             # Matches 'life insurance' or 'lifeinsurance'
+  "\\b(?:life\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'life insurance'
+  "\\blife\\s?coverage\\b",              # Matches 'life coverage' or 'lifecoverage'
+  "\\b(?:life\\W+(?:\\w+\\W+){0,1}?coverage)\\b", # Matches variations like 'life coverage'
+  "\\bad&d\\b",                          # Matches 'AD&D'
+  "\\baccidental\\s?death\\b",           # Matches 'accidental death' or 'accidentaldeath'
+  "\\b(?:accidental\\W+(?:\\w+\\W+){0,1}?death)\\b", # Matches variations like 'accidental death'
+  "\\bdismemberment\\b",                 # Matches the word 'dismemberment'
+  "\\b(?:accidental\\W+(?:\\w+\\W+){0,1}?dismemberment)\\b", # Matches variations like 'accidental dismemberment'
+  "\\bindemnity\\b",                     # Matches the word 'indemnity'
+  "\\bindemnity\\s?plan\\b",             # Matches 'indemnity plan' or 'indemnityplan'
+  "\\bdisability\\b",                    # Matches the word 'disability'
+  "\\bdisability\\s?insurance\\b",       # Matches 'disability insurance' or 'disabilityinsurance'
+  "\\b(?:disability\\W+(?:\\w+\\W+){0,1}?insurance)\\b", # Matches variations like 'disability insurance'
+  "\\bdisability\\s?coverage\\b",        # Matches 'disability coverage' or 'disabilitycoverage'
+  "\\b(?:disability\\W+(?:\\w+\\W+){0,1}?coverage)\\b", # Matches variations like 'disability coverage'
+  "(?=.*life)(?=.*(insurance|coverage|plan))", # Matches 'life' with any of the specified terms
+  "(?=.*disability)(?=.*(insurance|coverage|plan))", # Matches 'disability' with any of the specified terms
+  "(?=.*ad&d)(?=.*(insurance|coverage|plan))", # Matches 'ad&d' with any of the specified terms
+  "(?=.*(indemnity|dismemberment))(?:\\w+\\W+){0,3}?(insurance|coverage|plan)", # Matches 'indemnity' or 'dismemberment' with 'insurance', 'coverage', or 'plan'
+  "\\baccidental\\s?(death|dismemberment|disability)\\b", # Matches 'accidental death', 'accidental dismemberment', or 'accidental disability'
+  "(?=.*accidental)(?=.*death|dismemberment|disability)", # Matches 'accidental' with 'death', 'dismemberment', or 'disability'
+  "\\b(?:coverage|insurance|plan)\\b(?!.*health)", # Matches 'coverage', 'insurance', or 'plan' but not followed by 'health'
+  "(?=.*(life|ad&d|disability|indemnity|dismemberment))(?!.*health)" # Matches specified terms but not followed by 'health'
+)
+
+benefits_life_cons_pattern <- paste(benefits_life_cons, collapse = "|")
+
+## Filter the comments to capture only those related to life insurance
+benefits_life_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(benefits_life_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(life_benefits = ifelse(comments %in% benefits_life_cons_comments$comments, "Y",
+                             "N")) 
+
+benefits_spending_accounts_cons <- c(
+  "\\bfsa\\b",                            # Matches 'FSA'
+  "\\bflexible\\s?spending\\s?account\\b",# Matches 'flexible spending account' or variations
+  "\\bflexible\\s?spending\\s?accounts\\b",# Matches 'flexible spending accounts' or variations
+  "\\bdependent\\s?care\\s?fsa\\b",       # Matches 'dependent care FSA' or 'dependentcare FSA'
+  "\\bdependent\\s?care\\s?flexible\\s?spending\\s?account\\b", # Matches 'dependent care flexible spending account' or variations
+  "\\bhsa\\b",                            # Matches 'HSA'
+  "\\bhealth\\s?savings\\s?account\\b",   # Matches 'health savings account' or variations
+  "\\bhealth\\s?savings\\s?accounts\\b",  # Matches 'health savings accounts' or variations
+  "\\bcommuter\\s?benefits\\b",           # Matches 'commuter benefits' or variations
+  "\\btransportation\\s?benefits\\b",     # Matches 'transportation benefits' or variations
+  "\\btransit\\s?benefits\\b",            # Matches 'transit benefits' or variations
+  "\\bparking\\s?benefits\\b",            # Matches 'parking benefits' or variations
+  "\\bcommuter\\s?reimbursement\\b",      # Matches 'commuter reimbursement' or variations
+  "\\btransit\\s?reimbursement\\b",       # Matches 'transit reimbursement' or variations
+  "\\bparking\\s?reimbursement\\b",       # Matches 'parking reimbursement' or variations
+  "\\bcommuter\\s?savings\\s?account\\b", # Matches 'commuter savings account' or variations
+  "\\btransit\\s?savings\\s?account\\b",  # Matches 'transit savings account' or variations
+  "\\bparking\\s?savings\\s?account\\b",  # Matches 'parking savings account' or variations
+  "(?=.*fsa)(?=.*(dependent|care|flexible|spending|account))", # Matches 'FSA' with any of the specified terms
+  "(?=.*hsa)(?=.*(health|savings|account))", # Matches 'HSA' with any of the specified terms
+  "(?=.*commuter)(?=.*(benefit|reimbursement|savings|account))", # Matches 'commuter' with any of the specified terms
+  "(?=.*transit)(?=.*(benefit|reimbursement|savings|account))", # Matches 'transit' with any of the specified terms
+  "(?=.*parking)(?=.*(benefit|reimbursement|savings|account))", # Matches 'parking' with any of the specified terms
+  "\\b(?:account|benefit|reimbursement)\\b(?!.*health)", # Matches 'account', 'benefit', or 'reimbursement' but not followed by 'health'
+  "(?=.*(fsa|hsa|commuter|transit|parking|dependent))(?!.*health)" # Matches specified terms but not followed by 'health'
+)
+
+benefits_spending_accounts_cons_pattern <- paste(benefits_spending_accounts_cons, collapse = "|")
+
+## Filter the comments to capture only those related to spending accounts
+benefits_spending_accounts_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(benefits_spending_accounts_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(spending_accounts_benefits = ifelse(comments %in% benefits_spending_accounts_cons_comments$comments, "Y",
+                             "N")) 
+benefits_family_cons <- c(
+  "\\bfamily\\s?(planning|forming)\\b",    # Matches 'family planning' or 'family forming'
+  "\\bivf\\b",                             # Matches 'IVF'
+  "\\bin\\s?vitro\\s?fertilization\\b",    # Matches 'in vitro fertilization'
+  "\\badoption\\b",                        # Matches 'adoption'
+  "(?=.*family)(?=.*(planning|forming))",  # Matches 'family' with 'planning' or 'forming'
+  "(?=.*ivf|in\\s?vitro\\s?fertilization)", # Matches 'IVF' or 'in vitro fertilization'
+  "(?=.*adoption)"                        # Matches 'adoption'
+)
+
+benefits_family_cons_pattern <- paste(benefits_family_cons, collapse = "|")
+
+## Filter the comments to capture only those related to family forming benefits 
+benefits_family_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(benefits_family_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(family_forming_benefits = ifelse(comments %in% benefits_family_cons_comments$comments, "Y",
+                             "N")) 
+
+benefits_pto_cons <- c(
+  "\\bpto\\b",                              # Matches 'PTO'
+  "\\btime\\s?off\\b",                      # Matches 'time off'
+  "\\bvacation\\b",                         # Matches 'vacation'
+  "\\bsick\\b",                             # Matches 'sick'
+  "\\bbereavement\\b",                      # Matches 'bereavement'
+  "(?=.*pto)",                              # Matches 'PTO'
+  "(?=.*time\\s?off)",                      # Matches 'time off'
+  "(?=.*vacation)",                         # Matches 'vacation'
+  "(?=.*sick)",                             # Matches 'sick'
+  "(?=.*bereavement)"                       # Matches 'bereavement'
+)
+
+benefits_pto_cons_pattern <- paste(benefits_pto_cons, collapse = "|")
+
+## Filter the comments to capture only those related to time off
+benefits_pto_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(benefits_pto_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(PTO_benefits = ifelse(comments %in% benefits_pto_cons_comments$comments, "Y",
+                             "N")) 
+
+benefits_leave_cons <- c(
+  "\\bmaternity\\b",                        # Matches 'maternity'
+  "\\bpaternity\\b",                        # Matches 'paternity'
+  "\\bparental\\b",                         # Matches 'parental'
+  "\\bsabbatical\\b",                       # Matches 'sabbatical'
+  "\\bloa\\b",                              # Matches 'LOA'
+  "\\bleave\\b",                            # Matches 'leave'
+  "(?=.*maternity)",                        # Matches 'maternity'
+  "(?=.*paternity)",                        # Matches 'paternity'
+  "(?=.*parental)",                         # Matches 'parental'
+  "(?=.*sabbatical)",                       # Matches 'sabbatical'
+  "(?=.*loa)",                              # Matches 'LOA'
+  "(?=.*leave)"                             # Matches 'leave'
+)
+
+benefits_leave_cons_pattern <- paste(benefits_leave_cons, collapse = "|")
+
+## Filter the comments to capture only those related to LOAs
+benefits_leave_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(benefits_leave_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(leave_benefits = ifelse(comments %in% benefits_leave_cons_comments$comments, "Y",
+                             "N")) 
+
+benefits_financial_cons <- c(
+  "\\b401\\b",                             # Matches '401'
+  "\\b401k\\b",                            # Matches '401k'
+  "\\bmatch\\b",                           # Matches 'match'
+  "\\bretirement\\b",                      # Matches 'retirement'
+  "\\broth\\b",                            # Matches 'roth'
+  "\\b529\\b",                             # Matches '529'
+  "\\bplanning\\b",                        # Matches 'planning'
+  "\\btax\\b",                             # Matches 'tax'
+  "(?=.*401)",                             # Matches '401'
+  "(?=.*401k)",                            # Matches '401k'
+  "(?=.*match)",                           # Matches 'match'
+  "(?=.*retirement)",                      # Matches 'retirement'
+  "(?=.*roth)",                            # Matches 'roth'
+  "(?=.*529)",                             # Matches '529'
+  "(?=.*planning)",                        # Matches 'planning'
+  "(?=.*tax)"                              # Matches 'tax'
+)
+
+benefits_financial_cons_pattern <- paste(benefits_financial_cons, collapse = "|")
+
+## Filter the comments to capture only those related to financial benefits
+benefits_financial_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(benefits_financial_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(financial_benefits = ifelse(comments %in% benefits_financial_cons_comments$comments, "Y",
+                             "N")) 
+
+benefits_perks_cons <- c(
+  "\\bgym\\b",                             # Matches 'gym'
+  "\\bwellbeing\\b",                       # Matches 'wellbeing'
+  "\\bdiscounts?\\b",                      # Matches 'discount' or 'discounts'
+  "\\beducation\\b",                       # Matches 'education'
+  "\\bschool\\b",                          # Matches 'school'
+  "\\btuition\\b",                         # Matches 'tuition'
+  "\\bceu\\b",                             # Matches 'CEU'
+  "(?=.*gym)",                             # Matches 'gym'
+  "(?=.*wellbeing)",                       # Matches 'wellbeing'
+  "(?=.*discount)",                        # Matches 'discount'
+  "(?=.*education)",                       # Matches 'education'
+  "(?=.*school)",                          # Matches 'school'
+  "(?=.*tuition)",                         # Matches 'tuition'
+  "(?=.*ceu)"                              # Matches 'CEU'
+)
+
+benefits_perks_cons_pattern <- paste(benefits_perks_cons, collapse = "|")
+
+## Filter the comments to capture only those related to perks
+benefits_perks_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(benefits_perks_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(perks_benefits = ifelse(comments %in% benefits_perks_cons_comments$comments, "Y",
+                             "N")) 
+
+TEST_cons <- TEST_cons %>%
+    mutate(benefits_insurance = ifelse(medical_benefits == "Y" | dental_benefits == "Y" | vision_benefits == "Y" | extra_benefits == "Y" | life_benefits == "Y" | spending_accounts_benefits == "Y", "Y", "N"))
+
+TEST_cons <- TEST_cons %>%
+    mutate(benefits_time_off = ifelse(PTO_benefits == "Y" | leave_benefits == "Y", "Y", "N"))
+
+TEST_cons <- TEST_cons %>%
+    mutate(benefits_all = ifelse(benefits_insurance == "Y" | benefits_time_off == "Y" | financial_benefits == "Y" | perks_benefits == "Y", "Y", "N"))
+
+##### Compensation ######
+   ## comp_pay: salary, hourly, pay, comp, compensation
+   ## comp_extra: bonus, incentive, stip, equity, stock, espp, ltip, 
+
+compensation_cons <- c(
+  "\\bsalary\\b",                          # Matches 'salary'
+  "\\bhourly\\b",                          # Matches 'hourly'
+  "\\bpay\\b",                             # Matches 'pay'
+  "\\bcomp\\b",                            # Matches 'comp'
+  "\\bcompensation\\b",                    # Matches 'compensation'
+  "\\bwages?\\b",                          # Matches 'wage' or 'wages'
+  "\\bincome\\b",                          # Matches 'income'
+  "\\bearnings?\\b",                       # Matches 'earning' or 'earnings'
+  "\\bpayscale\\b",                        # Matches 'payscale'
+  "\\bpaycheck\\b",                        # Matches 'paycheck'
+  "\\bpayslip\\b",                         # Matches 'payslip'
+  "\\bremuneration\\b",                    # Matches 'remuneration'
+  "\\bbase\\s?pay\\b",                     # Matches 'base pay'
+  "\\bannual\\s?pay\\b",                   # Matches 'annual pay'
+  "\\bmonthly\\s?pay\\b",                  # Matches 'monthly pay'
+  "\\bweekly\\s?pay\\b",                   # Matches 'weekly pay'
+  "\\bhourly\\s?wage\\b",                  # Matches 'hourly wage'
+  "\\bpay\\s?rate\\b",                     # Matches 'pay rate'
+  "\\bpayscale\\b",                        # Matches 'payscale'
+  "\\bpayslip\\b",                         # Matches 'payslip'
+  "\\bpaycheck\\b",                        # Matches 'paycheck'
+  "\\bpayscale\\b",                        # Matches 'payscale'
+  "(?=.*salary)(?=.*increase|raise|adjustment)", # Matches 'salary' with 'increase', 'raise', or 'adjustment'
+  "(?=.*hourly)(?=.*rate)",                # Matches 'hourly' with 'rate'
+  "(?=.*pay)(?=.*raise|increase|adjustment)", # Matches 'pay' with 'raise', 'increase', or 'adjustment'
+  "(?=.*compensation)(?=.*package|review|plan)", # Matches 'compensation' with 'package', 'review', or 'plan'
+  "(?=.*wage)(?=.*increase|rate|adjustment)", # Matches 'wage' with 'increase', 'rate', or 'adjustment'
+  "(?=.*income)(?=.*increase|raise|adjustment)", # Matches 'income' with 'increase', 'raise', or 'adjustment'
+  "(?=.*earnings)(?=.*increase|raise|adjustment)", # Matches 'earnings' with 'increase', 'raise', or 'adjustment'
+  "(?=.*remuneration)(?=.*package|review|plan)", # Matches 'remuneration' with 'package', 'review', or 'plan'
+  "(?=.*base)(?=.*pay)",                   # Matches 'base' with 'pay'
+  "(?=.*annual)(?=.*pay)",                 # Matches 'annual' with 'pay'
+  "(?=.*monthly)(?=.*pay)",                # Matches 'monthly' with 'pay'
+  "(?=.*weekly)(?=.*pay)",                 # Matches 'weekly' with 'pay'
+  "(?=.*hourly)(?=.*wage)",                # Matches 'hourly' with 'wage'
+  "(?=.*pay)(?=.*rate)"                   # Matches 'pay' with 'rate'
+)
+
+compensation_cons_pattern <- paste(compensation_cons, collapse = "|")
+
+## Filter the comments to capture only those related to base compensation
+compensation_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(compensation_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(base_compensation = ifelse(comments %in% compensation_cons_comments$comments, "Y",
+                             "N")) 
+
+additional_compensation_cons <- c(
+  "\\bbonus\\b",                           # Matches 'bonus'
+  "\\bbonuses\\b",                         # Matches 'bonuses'
+  "\\bequity\\b",                          # Matches 'equity'
+  "\\bstock\\b",                           # Matches 'stock'
+  "\\bstocks\\b",                          # Matches 'stocks'
+  "\\bshares?\\b",                         # Matches 'share' or 'shares'
+  "\\boptions?\\b",                        # Matches 'option' or 'options'
+  "\\breserved\\s?stock\\b",               # Matches 'reserved stock'
+  "\\brestricted\\s?stock\\b",             # Matches 'restricted stock'
+  "\\bgrants?\\b",                         # Matches 'grant' or 'grants'
+  "\\bvesting\\b",                         # Matches 'vesting'
+  "\\bprofit\\s?sharing\\b",               # Matches 'profit sharing'
+  "\\bincentives?\\b",                     # Matches 'incentive' or 'incentives'
+  "\\bperformance\\s?bonus\\b",            # Matches 'performance bonus'
+  "\\bannual\\s?bonus\\b",                 # Matches 'annual bonus'
+  "\\bsigning\\s?bonus\\b",                # Matches 'signing bonus'
+  "\\bretention\\s?bonus\\b",              # Matches 'retention bonus'
+  "\\bvariable\\s?pay\\b",                 # Matches 'variable pay'
+  "\\btax\\s?deferral\\b",                 # Matches 'tax deferral'
+  "\\bprofit\\s?distribution\\b",          # Matches 'profit distribution'
+  "(?=.*bonus)(?=.*annual|performance|signing|retention)", # Matches 'bonus' with 'annual', 'performance', 'signing', or 'retention'
+  "(?=.*equity)(?=.*grant|stock|vesting)", # Matches 'equity' with 'grant', 'stock', or 'vesting'
+  "(?=.*stock)(?=.*option|share|vesting|restricted|reserved)", # Matches 'stock' with 'option', 'share', 'vesting', 'restricted', or 'reserved'
+  "(?=.*profit)(?=.*sharing|distribution)", # Matches 'profit' with 'sharing' or 'distribution'
+  "(?=.*incentive)(?=.*plan|program)",    # Matches 'incentive' with 'plan' or 'program'
+  "(?=.*variable)(?=.*pay)",              # Matches 'variable' with 'pay'
+  "(?=.*tax)(?=.*deferral)"               # Matches 'tax' with 'deferral'
+)
+
+additional_compensation_cons_pattern <- paste(additional_compensation_cons, collapse = "|")
+
+## Filter the comments to capture only those related to additional compensation
+additional_compensation_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(additional_compensation_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(additional_compensation = ifelse(comments %in% additional_compensation_cons_comments$comments, "Y",
+                             "N")) 
+
+TEST_cons <- TEST_cons %>%
+    mutate(compensation = ifelse(base_compensation == "Y" | additional_compensation == "Y", "Y", "N"))
+
+###Career Development###
+
+career_development_cons <- c(
+  "\\bpromotion\\b",                       # Matches 'promotion'
+  "\\bpromotions\\b",                      # Matches 'promotions'
+  "\\bpromote\\b",                         # Matches 'promote'
+  "\\bpromoted\\b",                        # Matches 'promoted'
+  "\\bprogress\\b",                        # Matches 'progress'
+  "\\bprogression\\b",                     # Matches 'progression'
+  "\\badvance\\b",                         # Matches 'advance'
+  "\\badvancement\\b",                     # Matches 'advancement'
+  "\\badvancing\\b",                       # Matches 'advancing'
+  "\\btraining\\b",                        # Matches 'training'
+  "\\btrainings\\b",                       # Matches 'trainings'
+  "\\bdevelop\\b",                         # Matches 'develop'
+  "\\bdevelopment\\b",                     # Matches 'development'
+  "\\bdeveloped\\b",                       # Matches 'developed'
+  "\\bcareer\\b",                          # Matches 'career'
+  "\\bcareers\\b",                         # Matches 'careers'
+  "\\bcareer\\s?path\\b",                  # Matches 'career path'
+  "\\bcareer\\s?growth\\b",                # Matches 'career growth'
+  "\\bcareer\\s?advancement\\b",           # Matches 'career advancement'
+  "\\bprofessional\\s?development\\b",     # Matches 'professional development'
+  "\\bskills\\b",                          # Matches 'skills'
+  "\\bskill\\s?development\\b",            # Matches 'skill development'
+  "\\bcoaching\\b",                        # Matches 'coaching'
+  "\\bmentoring\\b",                       # Matches 'mentoring'
+  "\\bmentor\\b",                          # Matches 'mentor'
+  "\\bmentorship\\b",                      # Matches 'mentorship'
+  "\\bworkshop\\b",                        # Matches 'workshop'
+  "\\bworkshops\\b",                       # Matches 'workshops'
+  "\\bcertification\\b",                   # Matches 'certification'
+  "\\bcertifications\\b",                  # Matches 'certifications'
+  "\\bseminar\\b",                         # Matches 'seminar'
+  "\\bseminars\\b",                        # Matches 'seminars'
+  "\\bconference\\b",                      # Matches 'conference'
+  "\\bconferences\\b",                     # Matches 'conferences'
+  "(?=.*promotion)(?=.*opportunity)",      # Matches 'promotion' with 'opportunity'
+  "(?=.*career)(?=.*progression|path|growth|advancement)", # Matches 'career' with 'progression', 'path', 'growth', or 'advancement'
+  "(?=.*professional)(?=.*development|growth)", # Matches 'professional' with 'development' or 'growth'
+  "(?=.*skills?)(?=.*development|training)", # Matches 'skill' or 'skills' with 'development' or 'training'
+  "(?=.*mentor)(?=.*program|ship|opportunity)", # Matches 'mentor' with 'program', 'ship', or 'opportunity'
+  "(?=.*certification)(?=.*program|training)", # Matches 'certification' with 'program' or 'training'
+  "(?=.*training)(?=.*program|opportunity|session)", # Matches 'training' with 'program', 'opportunity', or 'session'
+  "(?=.*workshop)(?=.*program|session)",    # Matches 'workshop' with 'program' or 'session'
+  "(?=.*conference)(?=.*attendance|session|event)", # Matches 'conference' with 'attendance', 'session', or 'event'
+  "(?=.*seminar)(?=.*attendance|session|event)"    # Matches 'seminar' with 'attendance', 'session', or 'event'
+)
+
+career_development_cons_pattern <- paste(career_development_cons, collapse = "|")
+
+## Filter the comments to capture only those related to professional development
+career_development_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(career_development_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(career_development = ifelse(comments %in% career_development_cons_comments$comments, "Y",
+                             "N")) 
+
+###Management###
+  ##  management_direct: manager, boss, supervisor, 
+   ## management_senior: c-suite, execs, executive, executives, c suite, CEO, CFO, CIO, CMO, senior | sr, BOD, board, directors, 
+
+direct_manager_cons<- c(
+  "\\bmanager\\b",                       # Matches 'manager'
+  "\\bmanagers\\b",                      # Matches 'managers'
+  "\\bboss\\b",                          # Matches 'boss'
+  "\\bbosses\\b",                        # Matches 'bosses'
+  "\\bsupervisor\\b",                    # Matches 'supervisor'
+  "\\bsupervisors\\b",                   # Matches 'supervisors'
+  "\\bsupervise\\b",                     # Matches 'supervise'
+  "\\bsupervised\\b",                    # Matches 'supervised'
+  "\\bteam\\s?lead\\b",                  # Matches 'team lead'
+  "\\bteam\\s?leader\\b",                # Matches 'team leader'
+  "\\bline\\s?manager\\b",               # Matches 'line manager'
+  "\\bimmediate\\s?supervisor\\b",       # Matches 'immediate supervisor'
+  "\\bdirect\\s?supervisor\\b",          # Matches 'direct supervisor'
+  "\\bdirect\\s?manager\\b",             # Matches 'direct manager'
+  "\\bmy\\s?manager\\b",                 # Matches 'my manager'
+  "\\bmy\\s?supervisor\\b",              # Matches 'my supervisor'
+  "\\bteam\\s?supervisor\\b",            # Matches 'team supervisor'
+  "\\bgroup\\s?supervisor\\b",           # Matches 'group supervisor'
+  "\\bdepartment\\s?manager\\b",         # Matches 'department manager'
+  "\\bwork\\s?supervisor\\b",            # Matches 'work supervisor'
+  "\\bwork\\s?manager\\b",               # Matches 'work manager'
+  "(?=.*manager)(?=.*performance|feedback|support)", # Matches 'manager' with 'performance', 'feedback', or 'support'
+  "(?=.*supervisor)(?=.*performance|feedback|support)", # Matches 'supervisor' with 'performance', 'feedback', or 'support'
+  "(?=.*boss)(?=.*performance|feedback|support)", # Matches 'boss' with 'performance', 'feedback', or 'support'
+  "(?=.*leader)(?=.*performance|feedback|support)", # Matches 'leader' with 'performance', 'feedback', or 'support'
+  "(?=.*lead)(?=.*performance|feedback|support)"    # Matches 'lead' with 'performance', 'feedback', or 'support'
+)
+
+direct_manager_cons_pattern <- paste(direct_manager_cons, collapse = "|")
+
+## Filter the comments to capture only those related to management
+direct_manager_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(direct_manager_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(direct_manager = ifelse(comments %in% direct_manager_cons_comments$comments, "Y",
+                             "N")) 
+
+senior_management_cons <- c(
+  "\\bexecutive\\b",                      # Matches 'executive'
+  "\\bexecutives\\b",                     # Matches 'executives'
+  "\\bmanagement\\b",                     # Matches 'management'
+ "\\bdan\\b",                             # Matches 'dan' - saw this in a few comments related to sr. mgt. must be a name - recommend doing this for all sr. exec names in the future
+  "\\bexecutive\\s?team\\b",              # Matches 'executive team'
+  "\\bsenior\\s?management\\b",           # Matches 'senior management'
+  "\\bsenior\\s?leaders?\\b",             # Matches 'senior leader' or 'senior leaders'
+  "\\bboard\\b",                          # Matches 'board'
+  "\\bboard\\s?of\\s?directors\\b",       # Matches 'board of directors'
+  "\\bdirectors?\\b",                     # Matches 'director' or 'directors'
+  "\\bchief\\s?executive\\s?officer\\b",  # Matches 'chief executive officer'
+  "\\bchief\\s?financial\\s?officer\\b",  # Matches 'chief financial officer'
+  "\\bchief\\s?operating\\s?officer\\b",  # Matches 'chief operating officer'
+  "\\bchief\\s?technology\\s?officer\\b", # Matches 'chief technology officer'
+  "\\bceo\\b",                            # Matches 'CEO' - could also find names for these roles and fill in
+  "\\bcfo\\b",                            # Matches 'CFO'
+  "\\bcoo\\b",                            # Matches 'COO'
+  "\\bcto\\b",                            # Matches 'CTO'
+  "\\bvice\\s?president\\b",              # Matches 'vice president'
+  "\\bvice\\s?presidents\\b",             # Matches 'vice presidents'
+  "\\bvp\\b",                             # Matches 'VP'
+  "\\bpresident\\b",                      # Matches 'president'
+  "\\bc-suite\\b",                        # Matches 'C-suite'
+  "\\bhead\\s?office\\b",                 # Matches 'head office'
+  "\\bexecutive\\s?leadership\\b",        # Matches 'executive leadership'
+  "\\bcorporate\\s?leadership\\b",        # Matches 'corporate leadership'
+  "(?=.*executive)(?=.*decision)",        # Matches 'executive' with 'decision'
+  "(?=.*senior)(?=.*leadership|management|team)", # Matches 'senior' with 'leadership', 'management', or 'team'
+  "(?=.*board)(?=.*member|meeting|decision|director)", # Matches 'board' with 'member', 'meeting', 'decision', or 'director'
+  "(?=.*chief)(?=.*officer|executive)",   # Matches 'chief' with 'officer' or 'executive'
+  "(?=.*c-suite)(?=.*leadership|team)",   # Matches 'C-suite' with 'leadership' or 'team'
+  "(?=.*corporate)(?=.*decision|leadership)" # Matches 'corporate' with 'decision' or 'leadership'
+)
+
+senior_management_cons_pattern <- paste(senior_management_cons, collapse = "|")
+
+## Filter the comments to capture only those related to compensation
+senior_management_cons_comments <- as.data.frame(
+  Comments_df_cons[grep(senior_management_cons_pattern, Comments_df_cons$comments, perl = TRUE), ]
+)
+
+TEST_cons <- TEST_cons %>%
+    mutate(senior_management = ifelse(comments %in% senior_management_cons_comments$comments, "Y",
+                             "N")) 
+
+TEST_cons <- TEST_cons %>%
+    mutate(management = ifelse(senior_management == "Y" | direct_manager == "Y", "Y", "N"))
+
+TEST_cons <- TEST_cons %>%
+    mutate(Other = apply(TEST_cons, 1, function(y){ ifelse("Y" %in% y, "N", "Y")}))
+
+end_time <- now()
+
+print(difftime(end_time, start_time))
+```
+Export it so the interested can take a tour through your masterpiece.
+
+```{r}
+##################################
+# Pros Comment Report - Commented pieces are from trying to get both sheets in the same workbook
+##################################
+
+#Creating df for header
+
+INTRO <- c("Honeywell",
+
+         "Data Source: Glassdoor",
+
+         "Data As Of: Q3 2024",
+
+         "Prepared on: 7/19/2024",
+
+         "Prepared by: Sam Bendziewicz")
+
+wb <- openxlsx::createWorkbook() #Create a work book
+
+#Comment Report
+
+addWorksheet(wb, "Pros Comment Report") 
+#addWorksheet(wb, "Cons Comment Reoprt") #name the worksheets in Excel
+
+writeData(wb, "Pros Comment Report", INTRO) #Write your INTRO
+#writeData(wb, "Cons Comment Report", INTRO)
+
+
+#Create style
+
+style1 <- createStyle(fontColour = "#000080", textDecoration = "Bold") #Choose your custom font color (https://www.rgbtohex.net/) and make it bold. Call it style1
+
+ 
+
+addStyle(wb, style = style1, rows= 1:5, cols = 1, sheet = "Pros Comment Report") 
+#addStyle(wb, style = style1, rows= 1:5, cols = 1, sheet = "Cons Comment Report") #add this style to your worksheet. Tell it which rows and columns
+
+writeData(wb, "Pros Comment Report", TEST_pros, startRow = 8) 
+#writeData(wb, "Cons Comment Report", TEST_cons, startRow = 8) #put your DF (in this case TEST) into the sheet under your writing (row 8)
+
+hs1 <- createStyle(textDecoration = "Bold") #create a new style for heading
+
+addStyle(wb, style = hs1, rows = 8, cols = 1:nrow(TEST_pros), sheet = "Pros Comment Report") 
+#addStyle(wb, style = hs1, rows = 8, cols = 1:nrow(TEST_pros), sheet = "Cons Comment Report") #Tell it where to go. We'll do 50 columns in this case so it can grow if needed
+
+#Freeze Panes
+
+#Also check here: https://stackoverflow.com/questions/37677326/applying-style-to-all-sheets-of-a-workbook-using-openxlsx-package-in-r
+
+freezePane(wb, "Pros Comment Report", firstActiveRow = 9) 
+#freezePane(wb, "Cons Comment Report", firstActiveRow = 9) #Freeze those panes. You know you want to. Tell it where to start.
+
+#Add filter
+
+addFilter(wb, "Pros Comment Report", row = 8, cols = 1:nrow(TEST_pros))
+#addFilter(wb, "Cons Comment Report", row = 8, cols = 1:nrow(TEST_cons))#Add your filter as well. If you're trying to impress, you might as well go all in :)
+
+#Now we'll do a fancy save by customizing the file name using paste0 and system time. We'll also assume this was for the previous month. You'll also need to make this path the one you want on your computer. 
+
+
+saveWorkbook(wb, paste0("~/Desktop/Advanced Analytics/HW/Honeywell_Pros_Comment_Report_", format(floor_date(Sys.Date()-months(1), "month"), "%B_%Y") , ".xlsx"), overwrite = TRUE)
+```
+
+```{r}
+##################################
+# Cons Comment Report
+##################################
+
+#Creating df for header
+
+INTRO <- c("Honeywell",
+
+         "Data Source: Glassdoor",
+
+         "Data As Of: Q3 2024",
+
+         "Prepared on: 7/19/2024",
+
+         "Prepared by: Sam Bendziewicz")
+
+wb <- openxlsx::createWorkbook() #Create a work book
+
+
+#Comment Report
+
+addWorksheet(wb, "Cons Comment Report") #name the worksheet in Excel
+
+writeData(wb, "Cons Comment Report", INTRO) #Write your INTRO
+
+
+#Create style
+
+style1 <- createStyle(fontColour = "#000080", textDecoration = "Bold") #Choose your custom font color (https://www.rgbtohex.net/) and make it bold. Call it style1
+
+ 
+
+addStyle(wb, style = style1, rows= 1:5, cols = 1, sheet = "Cons Comment Report") #add this style to your worksheet. Tell it which rows and columns
+
+writeData(wb, "Cons Comment Report", TEST_cons, startRow = 8) #put your DF (in this case TEST) into the sheet under your writing (row 8)
+
+hs1 <- createStyle(textDecoration = "Bold") #create a new style for heading
+
+addStyle(wb, style = hs1, rows = 8, cols = 1:nrow(TEST_cons), sheet = "Cons Comment Report") #Tell it where to go. We'll do 50 columns in this case so it can grow if needed
+
+#Freeze Panes
+
+#Also check here: https://stackoverflow.com/questions/37677326/applying-style-to-all-sheets-of-a-workbook-using-openxlsx-package-in-r
+
+freezePane(wb, "Cons Comment Report", firstActiveRow = 9) #Freeze those panes. You know you want to. Tell it where to start.
+
+#Add filter
+
+addFilter(wb, "Cons Comment Report", row = 8, cols = 1:nrow(TEST_cons)) #Add your filter as well. If you're trying to impress, you might as well go all in :)
+
+#Now we'll do a fancy save by customizing the file name using paste0 and system time. We'll also assume this was for the previous month. You'll also need to make this path the one you want on your computer. 
+
+
+saveWorkbook(wb, paste0("~/Desktop/Advanced Analytics/HW/Honeywell_Cons_Comment_Report_", format(floor_date(Sys.Date()-months(1), "month"), "%B_%Y") , ".xlsx"), overwrite = TRUE)
+```
+
