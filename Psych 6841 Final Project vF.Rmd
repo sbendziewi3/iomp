@@ -1,0 +1,1989 @@
+---
+title: "Psych6841 Project - Sam Bendziewicz"
+author: "Sam Bendziewicz"
+date: "2024-07-29"
+output: html_document
+---
+
+```{r, set.seed(2024)}
+knitr::opts_chunk$set(cache.extra = knitr::rand_seed)
+```
+
+Load packages you need to run the code.
+```{r, echo = FALSE, include= FALSE, warning = FALSE, message = FALSE}
+#' <!-- ####################################################################################################### -->
+#' <!-- ####################################################################################################### -->
+#' <!-- ##################################LOADING PACKAGES##################################################### -->
+
+tryCatch(require(pacman),finally=utils:::install.packages(pkgs='pacman',repos='http://cran.r-project.org'));
+require(pacman)
+
+#' <!-- ##if the above doesn't work, use this code## -->
+#' <!-- ##tryCatch -->
+#' <!-- #detach("package:pacman", unload = TRUE) -->
+#' <!-- #install.packages("pacman", dependencies = TRUE) -->
+#' <!-- # ## install.packages("pacman") -->
+
+pacman::p_load(digest,
+               readxl,
+               readr,
+               dplyr,
+               tidyr,
+               ggplot2,
+               knitr,
+               MASS,
+               RCurl,
+               DT,
+               modelr,
+               broom,
+               purrr,
+               pROC,
+               data.table,
+               VIM,
+               gridExtra,
+               Metrics,
+               randomForest,
+               e1071,
+               corrplot,
+               DMwR2,
+               rsample,
+               skimr,
+               psych,
+               conflicted,
+               tree,
+               tidymodels,
+               janitor,
+               GGally,
+               tidyquant,
+               doParallel,
+               Boruta,
+               correlationfunnel,
+               naniar,
+               plotly,
+               themis,
+               questionr,
+               tidylog
+)
+
+# Loading from GitHub
+pacman::p_load_current_gh("agstn/dataxray")
+```
+
+```{r, echo = FALSE, include= FALSE, warning = FALSE, message = FALSE}
+
+#' <!-- #Loading libraries -->
+
+suppressPackageStartupMessages({
+    library(conflicted) # An Alternative Conflict Resolution Strategy
+    library(readxl) # read in Excel files
+    library(readr) # read in csv files
+    library(MASS) # Functions and datasets to support Venables and Ripley, "Modern Applied Statistics with S" (4th edition, 2002).
+    library(dplyr) # A Grammar of Data Manipulation
+    library(tidyr) # Tidy Messy Data
+    library(broom) # Convert Statistical Objects into Tidy Tibbles
+    library(ggplot2) # grammar of graphics for visualization
+    library(knitr) # A General-Purpose Package for Dynamic Report Generation in R
+    library(RCurl) # General Network (HTTP/FTP/...) Client Interface for R
+    library(DT) # A Wrapper of the JavaScript Library 'DataTables'
+    library(modelr) # Modelling Functions that Work with the Pipe
+    library(purrr) # Functional Programming Tools - helps with mapping (i.e., loops)
+    library(pROC) #	Display and Analyze ROC Curves
+    library(data.table) # Fast aggregation of large data (e.g. 100GB in RAM)
+    library(VIM) # Visualization and Imputation of Missing Values
+    library(gridExtra) # Miscellaneous Functions for "Grid" Graphics
+    library(Metrics) # Evaluation Metrics for Machine Learning
+    library(randomForest) # Breiman and Cutler's Random Forests for Classification and Regression
+    library(e1071) # Misc Functions of the Department of Statistics, Probability Theory Group (Formerly: E1071), TU Wien
+    library(corrplot) # Visualization of a Correlation Matrix
+    library(DMwR2) # Functions and Data for the Second Edition of "Data Mining with R"
+    library(rsample) # General Resampling Infrastructure
+    library(skimr) # Compact and Flexible Summaries of Data
+    library(psych) # Procedures for Psychological, Psychometric, and Personality Research
+    library(tree) # Classification and Regression Trees
+    library(tidymodels) # Easily Install and Load the 'Tidymodels' Packages
+    library(janitor) # Simple Tools for Examining and Cleaning Dirty Data
+    library(GGally) # Extension to 'ggplot2'
+    library(tidyquant) # Tidy Quantitative Financial Analysis
+    library(doParallel) # Foreach Parallel Adaptor for the 'parallel' Package
+    library(Boruta) # Wrapper Algorithm for All Relevant Feature Selection
+    library(correlationfunnel) # Speed Up Exploratory Data Analysis (EDA) with the Correlation Funnel
+    library(naniar) # viewing and handling missing data
+    library(plotly) # Create interactive plots
+    library(vip)
+    library(themis) # Upsampling and Downsampling methods for tidymodels
+    library(questionr) # this will give you odds ratios
+    library(tidylog, warn.conflicts = FALSE)
+})
+
+for (f in getNamespaceExports("tidylog")) {
+    conflicted::conflict_prefer(f, "tidylog", quiet = TRUE)
+}
+```
+
+Set your `conflict_prefer`. These are bulk preferences we see in our class code, and also the dumping ground for preferences needed further down in the code. Plan to copypasta all these into the code and # out the ones you need to turn off.
+
+```{r}
+conflict_prefer("select", "dplyr")
+conflict_prefer("tune", "tune")
+conflict_prefer("chisq.test", "stats")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("skewness", "PerformanceAnalytics")
+conflict_prefer("fit", "parsnip")
+conflict_prefer("rmse", "yardstick")
+conflict_prefer("accuracy", "yardstick")
+conflict_prefer("precision", "yardstick")
+conflict_prefer("map", "purrr")
+conflict_prefer("vip", "vip")
+conflict_prefer("filter", "dplyr")
+conflict_prefer("describe", "psych")
+```
+
+Bring in the data
+```{r}
+stringsAsFactors = TRUE
+library(readxl)
+Data <- read_excel("~/Desktop/Advanced Analytics/Project/PSYC6841_Final_Project_Data.xlsx")
+
+#Change left(attrition), work accident, and promotion in last 5 years from a 0/1 num to factor
+Data <- Data %>%
+    mutate_if(is.character, as.factor)%>%
+  rename(department = sales)%>% #change column name to "department because it's more than just sales
+  rename(tenure = time_spend_company)%>% #rename "time_spend_company" to "tenure" because fewer words same meaning
+  mutate(Work_accident = factor(Work_accident, levels = c(0,1), labels = c("no", "yes"))) %>%
+  mutate(promotion_last_5years = factor(promotion_last_5years, levels = c(0,1), labels = c("no", "yes"))) %>%
+  mutate(left = as.factor(left))
+         
+str(Data)
+
+Data <- Data %>% 
+    mutate(ID = row_number()) %>%
+  select(ID, everything()) #add an ID row to the data
+
+glimpse(Data)
+
+Data <- Data %>%
+  select(ID, left, department, salary, everything())
+
+glimpse(Data)
+colnames(Data)
+summary(Data)
+```
+Looks like we have 9999 observations of 11 variables initially. We change Sales and Salary from character strings to factors, and "left," "work accidents" and "promotions" from a 0/1 to a yes/no factor so they're more easily usable in regressions. We also added a new column "ID" that acts as an identifier for each observation.
+
+Now we're going to check for and identify any duplicates or missing data. 
+```{r}
+sum(is.na(duplicated(Data)))
+which(duplicated(Data$ID))
+
+#Missing Data visualization (Amelia Earhart)
+library(Amelia)
+missmap(Data, y.at=c(1), y.labels=c(''), col=c('yellow', 'black'))
+
+#custom f(x) percent missing if you don't need the visualization
+percentmissing <- function (x){ sum(is.na(x))/length(x) * 100}
+
+missing <- apply(Data, 1, percentmissing) # we will use an apply function to loop it. 1 indicates rows and 2 indicates columns
+
+table(missing)
+```
+No missing or duplicate data. A christmas miracle!
+
+Let's create some tables and graphs for each of our variables:
+
+```{r}
+
+#Attrition or "Left"
+Data %>%
+        group_by(left) %>%
+        tally() %>%
+        ggplot(aes(x = left, y = n,fill=left)) +
+        geom_bar(stat = "identity") +
+        theme_minimal() +
+        labs(x="Attrition", y="Count of Attrition") +
+        ggtitle("Attrition") +
+        geom_text(aes(label = n), vjust = -0.5, position = position_dodge(0.9))
+
+Data %>%
+  tabyl(left) %>% # instead of using the $, I just piped it
+  adorn_pct_formatting(digits = 2, affix_sign = TRUE)
+
+#Department Affiliation
+Data %>%
+        group_by(department) %>%
+        tally() %>%
+        ggplot(aes(x = department, y = n,fill=department)) +
+        geom_bar(stat = "identity") +
+        theme_minimal() +
+        labs(x="Department", y="Count of Department") +
+        ggtitle("Department Membership") +
+        geom_text(aes(label = n), vjust = -0.5, position = position_dodge(0.9))
+
+Data %>%
+  tabyl(department) %>% # instead of using the $, I just piped it
+  adorn_pct_formatting(digits = 2, affix_sign = TRUE)
+
+#Salary
+Data %>%
+        group_by(salary) %>%
+        tally() %>%
+        ggplot(aes(x = salary, y = n,fill=salary)) +
+        geom_bar(stat = "identity") +
+        theme_minimal() +
+        labs(x="Salary", y="Count of Salary") +
+        ggtitle("Salary Amounts") +
+        geom_text(aes(label = n), vjust = -0.5, position = position_dodge(0.9))
+
+Data %>%
+  tabyl(salary) %>% # instead of using the $, I just piped it
+  adorn_pct_formatting(digits = 2, affix_sign = TRUE)
+
+#Satisfaction Level
+Data %>%
+        group_by(satisfaction_level) %>%
+        tally() %>%
+        ggplot(aes(x = satisfaction_level, y = n,fill=satisfaction_level)) +
+        geom_bar(stat = "identity") +
+        theme_minimal() +
+        labs(x="Satisfaction Level", y="Count of Sat Level") +
+        ggtitle("Distribution of Satisfaciton Level")
+
+Data %>%
+  tabyl(satisfaction_level) %>% # instead of using the $, I just piped it
+  adorn_pct_formatting(digits = 2, affix_sign = TRUE)
+
+#Last Evaluation
+Data %>%
+        group_by(last_evaluation) %>%
+        tally() %>%
+        ggplot(aes(x = last_evaluation, y = n,fill=last_evaluation)) +
+        geom_bar(stat = "identity") +
+        theme_minimal() +
+        labs(x="Last Evaluation", y="Count of Last Eval") +
+        ggtitle("Distribution of Last Evaluation")
+
+Data %>%
+  tabyl(last_evaluation) %>% # instead of using the $, I just piped it
+  adorn_pct_formatting(digits = 2, affix_sign = TRUE)
+
+#Number of Projects
+Data %>%
+        group_by(number_project) %>%
+        tally() %>%
+        ggplot(aes(x = number_project, y = n,fill=number_project)) +
+        geom_bar(stat = "identity") +
+        theme_minimal() +
+        labs(x="Number of Projects", y="Count of # of Projects") +
+        ggtitle("Number of Projects Distribution") +
+        geom_text(aes(label = n), vjust = 0, position = position_dodge(0.9))
+
+Data %>%
+  tabyl(number_project) %>% # instead of using the $, I just piped it
+  adorn_pct_formatting(digits = 2, affix_sign = TRUE)
+
+#Average Monthly Hours
+Data %>%
+        group_by(average_monthly_hours) %>%
+        tally() %>%
+        ggplot(aes(x = average_monthly_hours, y = n,fill=average_monthly_hours)) +
+        geom_bar(stat = "identity") +
+        theme_minimal() +
+        labs(x="Average Monthly Hours", y="Count of Avg. Monthly Hours") +
+        ggtitle("Average Monthly Hours Distribution")
+
+Data %>%
+  tabyl(average_monthly_hours) %>% # instead of using the $, I just piped it
+  adorn_pct_formatting(digits = 2, affix_sign = TRUE)
+
+Data %>%
+  tabyl(number_project) %>% # instead of using the $, I just piped it
+  adorn_pct_formatting(digits = 2, affix_sign = TRUE)
+
+#Tenure
+Data %>%
+        group_by(tenure) %>%
+        tally() %>%
+        ggplot(aes(x = tenure, y = n,fill=tenure)) +
+        geom_bar(stat = "identity") +
+        theme_minimal() +
+        labs(x="Tenure", y="Count of Tenure") +
+        ggtitle("Tenure Distribution") +
+        geom_text(aes(label = n), vjust = 0, position = position_dodge(0.9))
+
+Data %>%
+  tabyl(tenure) %>% # instead of using the $, I just piped it
+  adorn_pct_formatting(digits = 2, affix_sign = TRUE)
+
+#work accident
+Data %>%
+        group_by(Work_accident) %>%
+        tally() %>%
+        ggplot(aes(x = Work_accident, y = n,fill=Work_accident)) +
+        geom_bar(stat = "identity") +
+        theme_minimal() +
+        labs(x="Work Accident", y="Count of Work Accident") +
+        ggtitle("Work Accident Count") +
+        geom_text(aes(label = n), vjust = 0, position = position_dodge(0.9))
+
+Data %>%
+  tabyl(Work_accident) %>% # instead of using the $, I just piped it
+  adorn_pct_formatting(digits = 2, affix_sign = TRUE)
+
+#Promotion Last 5 Years
+Data %>%
+        group_by(promotion_last_5years) %>%
+        tally() %>%
+        ggplot(aes(x = promotion_last_5years, y = n,fill=promotion_last_5years)) +
+        geom_bar(stat = "identity") +
+        theme_minimal() +
+        labs(x="Promotion in Last 5 Years", y="Count of Promotions") +
+        ggtitle("Promotion in Last 5 Years Count") +
+        geom_text(aes(label = n), vjust = 0, position = position_dodge(0.9))
+
+Data %>%
+  tabyl(promotion_last_5years) %>% # instead of using the $, I just piped it
+  adorn_pct_formatting(digits = 2, affix_sign = TRUE)
+```
+
+## Training and Test Data 
+Here we're splitting our data into a training and test data set.
+```{r}
+set.seed(2020)
+data_split <- initial_split(Data, prop = 0.75, strata = "left") #adding strata = left helps when the data is split to create data sets that have near equal distributions of attrition outcomes.
+
+train_data <- training(data_split)
+
+test_data <- testing(data_split)
+
+tabyl(train_data$left)
+
+tabyl(test_data$left)
+
+cv_folds <- vfold_cv(train_data, v=10, strata = "left") #here we're creating our resamples that we'll use later in the code with our recipes and models
+```
+The tabyls we made show that the proportions of attrition in our two data sets are darn near equal thanks to using the strata argument. I'm happy with that and am not going to mess with it any more, but we do have an outcome class imbalance, so we'll fix that in a bit.
+
+#Checking out the Correlations
+```{r}
+library(correlationfunnel)
+library(plotly)
+install.packages("htmlwidgets")
+library(htmlwidgets)
+#make a new data table that drops and NAs - we saw earlier that we didn't have any, but since we want to use this again later i just included this step
+hr_data_tbl <- train_data %>%
+    drop_na()
+##we see in our environment after running this that we still have the same number of observations, so still no NAs in the data
+
+#create a correlation table - this excludes ID, and creates 5 bins for our continuous variable and one-hot encodes them to categorical variables. it also groups infrequent categories into an other category if they show up less than 1% of the time. Then it calculates the correlation of each variable with the target variable (left_1)
+hr_corr_tbl <- hr_data_tbl %>%
+  select(-ID) %>%                       
+  binarize(n_bins = 5,                  
+           thresh_infreq = 0.01, 
+           name_infreq = "OTHER", 
+           one_hot = TRUE) %>%
+  correlate(left__1)
+
+#this creates that sick correlation funnel and ggplotly turns it into an interactive masterpiece that elicits f-bombs and promotions
+hr_corr_tbl %>%
+    plot_correlation_funnel() %>%
+    ggplotly()
+
+interactive_plot <- hr_corr_tbl %>%
+    plot_correlation_funnel() %>%
+    ggplotly()
+
+saveWidget(interactive_plot, "correlation_funnel.html", selfcontained = TRUE)
+```
+Typically a good cutoff point for anything that will be included in your model is around 0.10. 
+Generally Speaking, it looks like most everything except promotions and department are worth taking a look at. - 
+
+Let's look at some Crosstabs of the data based on what we're seeing in our correlation table
+We're going to look at Salary first, because we always get asked if it's pay making people leave. We saw in our correlation table that it's not as big of a deal as some other factors, but we're going to get asked, so lets just get it out of the way
+```{r}
+#satisfaction Crosstab
+crosstab3 <- Data %>%
+  count(left, satisfaction_level) %>% 
+  spread(key = left, value = n, fill = 0)
+print(crosstab3)
+
+crosstab3v <- Data %>%
+  count(left, satisfaction_level)
+
+ggplot(crosstab3v, aes(x = satisfaction_level, y = n, fill = left)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(x = "Satisfaction Level", y = "Count", fill = "Attrition") +
+  ggtitle("Crosstab of Attrition by Satisfaction")
+
+#Tenure Crosstab
+crosstab3 <- Data %>%
+  count(left, tenure) %>% 
+  spread(key = left, value = n, fill = 0)
+print(crosstab1)
+
+crosstab3v <- Data %>%
+  count(left, tenure)
+
+ggplot(crosstab3v, aes(x = tenure, y = n, fill = left)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(x = "Tenure", y = "Count", fill = "Attrition") +
+  ggtitle("Crosstab of Attrition by Tenure")
+
+#Salary Crosstab
+crosstab1 <- Data %>%
+  count(left, salary) %>% 
+  spread(key = left, value = n, fill = 0)
+print(crosstab1)
+
+crosstab1v <- Data %>%
+  count(left, salary)
+
+ggplot(crosstab1v, aes(x = salary, y = n, fill = left)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(x = "Salary", y = "Count", fill = "Attrition") +
+  ggtitle("Crosstab of Attrition by Salary")
+
+
+#Attrition by department
+
+crosstab2 <- Data %>%
+  count(left, department) %>% 
+  spread(key = left, value = n, fill = 0)
+print(crosstab2)
+
+crosstab2v <- Data %>%
+  count(left, department)
+
+ggplot(crosstab2v, aes(x = department, y = n, fill = left)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(x = "Department", y = "Count", fill = "Attrition") +
+  ggtitle("Crosstab of Attrition by Department") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+
+#Number of projects & Average hours - let's see if we can figure out a way to show a heat map for these variables so I can come back and use this later. Everyone loves a heatmap
+
+crosstab_heatmap <- Data %>%
+  count(left, average_monthly_hours, number_project) %>%
+  spread(key = number_project, value = n, fill = 0)
+
+glimpse(crosstab_heatmap)
+crosstab_long <- crosstab_heatmap %>%
+  gather(key = "average", value = "count", -left, -average_monthly_hours)
+
+ggplot(crosstab_long, aes(x = average_monthly_hours, y = average, fill = count)) +
+  geom_tile() +
+  facet_wrap(~ left) +
+  scale_fill_gradient(low = "white", high = "blue") +
+  theme_minimal() +
+  labs(x = "Average Monthly Hours", y = "Number of Projects", fill = "Count") +
+  ggtitle("Heatmap of Attrition by Number of Projects and Average Monthly Hours") +
+  scale_y_discrete(breaks = seq(0, 8, by = 1)) +
+  scale_x_continuous(breaks = seq(0, 400, by = 50)) +
+  theme(
+    axis.text.y = element_text(angle = 45, vjust = 1, hjust = 1, size = 10),
+    axis.text.x = element_text(size = 10),
+    plot.margin = ggplot2::margin(10, 10, 30, 10)  # Add space around the plot
+  )
+```
+Salary, although not highly ranked in our correlation funnel shows what most would expect. Low salary has the highest incidence of attrition compared to medium and high salaries, but it's difficult to tell if there is a statistically significan difference between low and medium. Since we're maintaining this variable in our models, i'm not going to do an analysis at this level and we'll see what the larger model tells us.
+
+Satisfaction level tells the story you'd think it would. Lots of attrition at the far left near zero, and then a second spike right under .5.
+Tenure is interesting because we have almost no attrition once an employee stays past 6 years. It seems like for attrition that we should focus on the new to company employees and create job paths that keep them engaged and more likely to stick around lnger.
+
+Number of projects is really interesting. At the extremes, there is a high proportion of attrition compared to staying. The average number of projects appears to be in the 3-5 range, and anything outside of that range looks like it could be either boring people into leaving or burning them out. It's hard to say that's exactly the case, but these are pretty staggering differences. So we'll make a heatmap that combines projects and hours worked (since they might be correlated) and see how that pops out.
+
+The heat map is interesting. It shows two hotspots with these two variables for attrition. Low projects combined with low monthly hours, along with high projects and high monthly hours all have high rates of attrition.
+```{r}
+glimpse(train_data)
+```
+
+Now lets fix our outcome imbalance in our train data. We're gonna make 2 recipes:
+ - upsampling - 
+ - adasyn - This is a synthetic upsampling technique that isn't really imputation, but it creates new data to balance the attrition & non-attrition data by creating "new people" but it doesn't ifll in missing data from the real people (not that we have any missing data in this data set anyway)
+```{r}
+
+#here's our upsampling recipe
+upsample_rec <- recipe(left ~., data = train_data) %>%
+  update_role(ID, new_role = "ID") %>%
+  step_mutate(department = factor(department)) %>%
+  step_mutate(Work_accident = factor(Work_accident)) %>%
+  step_mutate(promotion_last_5years = factor(promotion_last_5years)) %>%
+  step_mutate(salary = factor(salary)) %>% #we are just making sure all these factor variables stay factors in this recipe - they are identified as such in the glimpse we did above, but might as well be sure
+  step_YeoJohnson(satisfaction_level,                  # Yeo-johnson transformation to normalize distribution of these
+                  last_evaluation,
+                  number_project,
+                  average_monthly_hours,
+                  tenure) %>%
+  step_center(all_numeric()) %>%                       # Centers all numeric variables
+  step_scale(all_numeric()) %>%                        # Scales all numeric variables
+  step_nzv(all_numeric()) %>%                          # Removes near-zero variance numeric predictors
+  step_zv(all_predictors()) %>%                        # Removes zero-variance predictors
+  step_upsample(all_outcomes(), skip = TRUE) %>%       # Upsamples the minority class in the outcome variable, skipping during training
+  step_dummy(all_nominal(), -all_outcomes())           # Converts categorical predictors to dummy variables except the outcome (left)
+
+upsample_rec
+
+#here's our adasyn recipe
+adasyn_rec <- recipe(left ~., data = train_data) %>%
+  update_role(ID, new_role = "ID") %>%
+  step_mutate(department = factor(department)) %>%
+  step_mutate(Work_accident = factor(Work_accident)) %>%
+  step_mutate(promotion_last_5years = factor(promotion_last_5years)) %>%
+  step_mutate(salary = factor(salary)) %>% #we are just making sure all these factor variables stay factors in this recipe - they are identified as such in the glimpse we did above, but might as well be sure
+  step_YeoJohnson(satisfaction_level, 
+                  last_evaluation,
+                  number_project,
+                  average_monthly_hours,
+                  tenure) %>%
+  step_normalize(all_numeric()) %>%
+  step_nzv(all_numeric()) %>%
+  step_zv(all_predictors()) %>%
+  step_dummy(all_nominal(), -all_outcomes())%>%
+  step_adasyn(left)                       # applies adaptive synthetic sampling (ADASYN) to balance outcome variable (left) to improve performance and reliability of the models
+
+adasyn_rec
+```
+The recipes above are both written to handle class imbalance in our original dataset for the outcome variable "left". Our upsample recipe duplicates "yes" rows until the the data is balanced whereas the ADASYN recipe creates synthetic samples. 
+
+Yeo- Johnson transformations normalize variables to improve model performance because normality is an assumption of many regression & machine learning models. It also reduces skewness, reduces outlier impact and stabilizes variance. We apply this transformation to satisfaction level, evaluation score, number of projects, average hours and tenure. These are our numerical values that can be transformed this way, so we did it.
+
+
+ Now we're gonna do our models. Let's do 4. We'll do these:
+ 
+ - Lasso - a type of linear regression that adds a penalty to the model for having too many variables, which simplifies the model and reduces overfitting. It works to select only the most important variables for prediction.
+ 
+ - Elasticnet - Elasticnet is a type of linear regression that combines two penalties to control for having too many variables and multicollinearity. It like a mix of lasso and ridge regressions, helping to simplify the model while keeping important variables and managing correlations between them.
+ - Random Forest - a machine learning method that builds a bunch of decision trees and combines their results so it can make better and more stable predictions. 
+ - XGboost - machine learning method that does decision trees to, but correts the errors of the last tree to get more and more accurate predictions as it goes. 
+```{r}
+library(rules)
+library(baguette)
+
+#Lasso
+
+lasso_reg_spec <-
+      # specify that the model is a logistic regression
+  logistic_reg(penalty = tune(), mixture = 1) %>% #setting the penalty to tune optimizes the right penalty number to optimize the number of variables included
+  # select the engine/package that underlies the model
+  set_engine("glmnet") %>% #Using glmnet instead of glm per error message below when trying to set up the grid. Error: Engine 'glm' is not available. Please use one of: 'lm', 'glmnet', 'stan', 'spark', 'keras'
+  # choose either the continuous regression or binary classification mode
+  set_mode("classification")
+
+#Elasticnet
+
+EN_reg_spec <-
+      # specify that the model is a logistic regression
+  logistic_reg(penalty = tune(), mixture = tune()) %>% #setting the penalty to tune optimizes the right penalty number to optimize the number of variables included. setting the mixture to tune will likely give us a mixture between 1 and 0 which is an elasticnet. Ridge would set to 0, Lasso to 1 like we did above
+  # select the engine/package that underlies the model
+  set_engine("glmnet") %>% 
+  set_mode("classification")
+
+# Random Forest
+
+rf_spec <- rand_forest(
+  mtry = tune(), #we don't know what to put here yet, so we use `tune` as a filler
+  # trees = tune(),
+  trees = 1000, #1000 #going low here for times sake. You usually want to start with at least 1000 - We'll do this once we're convinced this is all going to run
+  min_n = tune()) %>% #we don't know what to put here yet, so we use `tune` as a filler
+  set_mode("classification") %>%
+  set_engine("ranger", seed = 2023, importance = "permutation") #make sure to include "importance" so that you can run VIP later
+
+#xgBoost
+
+xgb_spec <- 
+   boost_tree(tree_depth = tune(),
+              learn_rate = tune(),
+              loss_reduction = tune(),#check out matt dancho's 2 step method for tuning (learn rate first, everything else segundo)
+              min_n = tune(),
+              sample_size = tune(),
+              # trees = tune(),
+              trees = tune()
+              ) %>% 
+   set_engine("xgboost") %>% 
+   set_mode("classification")
+```
+
+Now we're going to create our workflow set. Since we established our recipes and the models above, now we can combine them to make some magic happen:
+
+```{r}
+recipe_list <- list(
+  ADASYN = adasyn_rec,
+  UPSAMPLE = upsample_rec
+)
+
+model_list <- list(
+  Lasso_Reg = lasso_reg_spec,
+  Elasticnet_Reg = EN_reg_spec,
+  Random_Forest = rf_spec,
+  xgBoosted_Trees = xgb_spec
+)
+```
+
+Now, we're gonna create a list of metrics to use to evaluate our models and workflows
+
+```{r}
+class_metric <- metric_set(j_index,
+                           accuracy, 
+                           f_meas, 
+                           kap, 
+                           precision, 
+                           sensitivity, 
+                           specificity, 
+                           roc_auc, 
+                           mcc, 
+                           pr_auc)
+```
+
+
+
+```{r}
+wf_set <- workflow_set(
+    preproc = recipe_list,
+    models = model_list,
+    cross = TRUE
+)
+
+wf_set
+```
+We only have two data preprocessors here, so the f(x) creates 8 workflows (4 models * 2 recipes). If you want to go back and add another way to preprocess the data, create a new recipe and then add it to the recipe_list.
+
+The wflow_id column tells you which preprocessor is combining with which model. You can extract the workflow to tell you how many recipe steps you have and the model in each. Or you can read and figure it out:
+
+```{r}
+wf_set %>% extract_workflow(id = "ADASYN_Elasticnet_Reg")
+```
+
+```{r}
+start_time <- now()
+grid_ctrl <- #this tells us what to do with all the tuning parameters across the 8 iterations
+   control_grid(
+      save_pred = TRUE,
+      parallel_over = "everything",
+      save_workflow = TRUE
+   )
+
+full_results_time <- 
+   system.time(
+      grid_results <- 
+         # all_workflows %>% 
+         wf_set %>%
+         workflow_map(seed = 1503, 
+                      resamples = cv_folds,      # pulls in our resamples we made earlier
+                      grid = 25,                 # the number of combos of hyperparameters to test
+                      control = grid_ctrl,       # uses settings from above to manage the grid search
+                      metrics = class_metric,    # 
+                      verbose = TRUE)            #let's us know what's going on as it works
+   )
+end_time <- now()
+end_time - start_time
+##10.04 hours - with xgb tune() and 100 tree in RF, 100 refolds
+```
+
+```{r}
+num_grid_models <- nrow(collect_metrics(grid_results, summarize = FALSE))
+grid_results
+```
+
+```{r}
+library(stringr)
+
+#Rank and filter grid results
+grid_results %>% 
+   rank_results() %>% 
+   # filter(.metric == "rmse") %>% 
+   filter(.metric == "pr_auc") %>%
+   select(model, .config, roc_auc = mean, rank)
+
+# visualize the grid results
+autoplot(
+   grid_results,
+   rank_metric = "pr_auc",  # <- how to order models
+   metric = "pr_auc",       # <- which metric to visualize
+   select_best = TRUE     # <- one point per workflow
+)
+
+# look at which of the models has the best PR AUC
+collect_metrics(grid_results) %>% 
+    separate(wflow_id, into = c("Recipe", "Model_Type"), sep = "_", remove = F, extra = "merge") %>%
+    filter(.metric == "pr_auc") %>% 
+    group_by(wflow_id) %>% 
+    filter(mean == max(mean)) %>% 
+    group_by(model) %>% 
+    select(-.config) %>% 
+    distinct() %>%
+    ungroup() %>% 
+    mutate(Workflow_Rank =  row_number(-mean),
+           .metric = str_to_upper(.metric)) %>%
+    ggplot(aes(x=Workflow_Rank, y = mean, shape = Recipe, color = Model_Type)) + # shape = Recipe (cut off anything with "_" due to separate above)
+    geom_point() +
+    geom_errorbar(aes(ymin = mean-std_err, ymax = mean+std_err)) +
+    theme_minimal()+
+    scale_colour_viridis_d() +
+    labs(title = "Performance Comparison of Workflow Sets", x = "Workflow Rank", y = "PR_AUC", color = "Model Types", shape = "Recipes")
+
+# Look at which model has the best J index
+collect_metrics(grid_results) %>% 
+    separate(wflow_id, into = c("Recipe", "Model_Type"), sep = "_", remove = F, extra = "merge") %>%
+    filter(.metric == "j_index") %>% 
+    group_by(wflow_id) %>% 
+    filter(mean == max(mean)) %>% 
+    group_by(model) %>% 
+    select(-.config) %>% 
+    distinct() %>%
+    ungroup() %>% 
+    mutate(Workflow_Rank =  row_number(-mean),
+           .metric = str_to_upper(.metric)) %>%
+    ggplot(aes(x=Workflow_Rank, y = mean, shape = Recipe, color = Model_Type)) + # shape = Recipe (cut off anything with "_" due to separate above)
+    geom_point() +
+    geom_errorbar(aes(ymin = mean-std_err, ymax = mean+std_err)) +
+    theme_minimal()+
+    scale_colour_viridis_d() +
+    labs(title = "Performance Comparison of Workflow Sets", x = "Workflow Rank", y = "J-Index", color = "Model Types", shape = "Recipes")
+
+```
+In simple terms:
+J=(Sensitivity+Specificity)−1
+A higher J-index means your test is really good at figuring out the true positives without making mistakes about who's not going to leave.
+
+Our first step should be to take one model from either recipe that scores the best on PR-AUC. Because we're trying to maximize the value for the company, PR AUC will identify the models with the best precision or sensitivity (ability to find true positives). In our case, true positive are what is going to return value (in dollars save in labor) back to the company. For this experiment to be worth anything, we need to be saving money, and maximizing true positives is our best way to do that. 
+Now we need to save all the models we just did because it took forever and you don't wanna lose that. Luckily for us, in the step above PR_AUC and J-Index identified the same rank order of models. We'll do this in order of how well they performed on pr_auc.
+
+With this decision criteria we pick an Adasyn Random Forest, Adasyn XGB, Upsampled Lasso Regression & Upsampled Elastic Net Regression
+
+We do this code block for each model type. I'm only going to comment this out once
+```{r}
+
+##Adasyn Random Forest
+
+rf_adasyn_best_results <-
+  grid_results %>% #this is where we pull form
+  extract_workflow_set_result("ADASYN_Random_Forest") %>% #tell it for which model we're looking at the test results
+  select_best(metric = "pr_auc")                          #now we select the workflow model with the highest PR_AUC
+
+rf_adasyn_best_results #we look at it
+
+rf_adasyn_test_results <-                                 #
+    grid_results %>%
+    extract_workflow("ADASYN_Random_Forest") %>%
+    finalize_workflow(rf_adasyn_best_results) %>%
+    last_fit(split = data_split)
+
+#Checking out variable importance
+rf_adaysn_best_model <- grid_results %>%
+    extract_workflow_set_result(id = "ADASYN_Random_Forest") %>%
+    select_best(metric = "pr_auc")
+
+rf_adasyn_wflw_fit_final <- grid_results %>%
+    extract_workflow("ADASYN_Random_Forest") %>%
+    finalize_workflow(rf_adaysn_best_model) %>%
+    fit(Data)
+
+### Important variables
+
+RF_importance_tbl <- vip::vi(rf_adasyn_wflw_fit_final$fit$fit$fit)
+rf_adasyn_wflw_fit_final %>%
+    fit(Data) %>%
+    extract_fit_parsnip() %>%
+    vip::vi()
+
+#SAVE the model
+saveRDS(rf_adasyn_wflw_fit_final, file = "~/Desktop/Advanced Analytics/Project/Models_v3/ADASYN_RF_model_for_attrition_2024.rds")
+```
+
+```{r}
+##Adasyn XG Boosted Trees
+
+xgb_adasyn_best_results <-
+  grid_results %>% #this is where we pull form
+  extract_workflow_set_result("ADASYN_xgBoosted_Trees") %>%
+  select_best(metric = "pr_auc")
+
+xgb_adasyn_best_results
+
+#Checking out variable importance
+xgb_adaysn_best_model <- grid_results %>%
+    extract_workflow_set_result(id = "ADASYN_xgBoosted_Trees") %>%
+    select_best(metric = "pr_auc")
+
+xgb_adasyn_wflw_fit_final <- grid_results %>%
+    extract_workflow("ADASYN_xgBoosted_Trees") %>%
+    finalize_workflow(xgb_adaysn_best_model) %>%
+    fit(Data)
+
+xgb_adasyn_test_results <-
+    grid_results %>%
+    extract_workflow("ADASYN_xgBoosted_Trees") %>%
+    finalize_workflow(xgb_adasyn_best_results) %>%
+    last_fit(split = data_split)
+
+### Important variables
+
+xgb_importance_tbl <- vip::vi(xgb_adasyn_wflw_fit_final$fit$fit$fit)
+xgb_adasyn_wflw_fit_final %>%
+    fit(Data) %>%
+    extract_fit_parsnip() %>%
+    vip::vi()
+
+#SAVE the model
+saveRDS(xgb_adasyn_wflw_fit_final, file = "~/Desktop/Advanced Analytics/Project/Models_v3/ADASYN_XGB_model_for_attrition_2024.rds")
+```
+ADASYN_Lasso_Reg
+```{r}
+lasso_adasyn_best_results <-
+  grid_results %>% #this is where we pull form
+  extract_workflow_set_result("ADASYN_Lasso_Reg") %>%
+  select_best(metric = "pr_auc")
+
+lasso_adasyn_best_results
+
+#Checking out variable importance
+lasso_adaysn_best_model <- grid_results %>%
+    extract_workflow_set_result(id = "ADASYN_Lasso_Reg") %>%
+    select_best(metric = "pr_auc")
+
+lasso_adasyn_wflw_fit_final <- grid_results %>%
+    extract_workflow("ADASYN_Lasso_Reg") %>%
+    finalize_workflow(lasso_adaysn_best_model) %>%
+    fit(Data)
+
+lasso_adasyn_test_results <-
+    grid_results %>%
+    extract_workflow("ADASYN_Lasso_Reg") %>%
+    finalize_workflow(lasso_adasyn_best_results) %>%
+    last_fit(split = data_split)
+
+### Important variables
+
+lasso_importance_tbl <- vip::vi(lasso_adasyn_wflw_fit_final$fit$fit$fit)
+lasso_adasyn_wflw_fit_final %>%
+    fit(Data) %>%
+    extract_fit_parsnip() %>%
+    vip::vi()
+
+#SAVE the model
+saveRDS(lasso_adasyn_wflw_fit_final, file = "~/Desktop/Advanced Analytics/Project/Models_v3/ADASYN_lasso_model_for_attrition_2024.rds")
+```
+
+ADASYN_Elasticnet_Reg
+```{r}
+en_adasyn_best_results <-
+  grid_results %>% #this is where we pull form
+  extract_workflow_set_result("ADASYN_Elasticnet_Reg") %>%
+  select_best(metric = "pr_auc")
+
+en_adasyn_best_results
+
+#Checking out variable importance
+en_adaysn_best_model <- grid_results %>%
+    extract_workflow_set_result(id = "ADASYN_Elasticnet_Reg") %>%
+    select_best(metric = "pr_auc")
+
+en_adasyn_wflw_fit_final <- grid_results %>%
+    extract_workflow("ADASYN_Elasticnet_Reg") %>%
+    finalize_workflow(en_adaysn_best_model) %>%
+    fit(Data)
+
+en_adasyn_test_results <-
+    grid_results %>%
+    extract_workflow("ADASYN_Elasticnet_Reg") %>%
+    finalize_workflow(en_adasyn_best_results) %>%
+    last_fit(split = data_split)
+
+### Important variables
+
+en_importance_tbl <- vip::vi(en_adasyn_wflw_fit_final$fit$fit$fit)
+en_adasyn_wflw_fit_final %>%
+    fit(Data) %>%
+    extract_fit_parsnip() %>%
+    vip::vi()
+
+#SAVE the model
+saveRDS(en_adasyn_wflw_fit_final, file = "~/Desktop/Advanced Analytics/Project/Models_v3/ADASYN_en_model_for_attrition_2024.rds")
+```
+
+UPSAMPLE_Lasso_Reg
+```{r}
+lasso_us_best_results <-
+  grid_results %>% #this is where we pull form
+  extract_workflow_set_result("UPSAMPLE_Lasso_Reg") %>%
+  select_best(metric = "pr_auc")
+
+lasso_us_best_results
+
+#Checking out variable importance
+lasso_us_best_model <- grid_results %>%
+    extract_workflow_set_result(id = "UPSAMPLE_Lasso_Reg") %>%
+    select_best(metric = "pr_auc")
+
+lasso_us_wflw_fit_final <- grid_results %>%
+    extract_workflow("UPSAMPLE_Lasso_Reg") %>%
+    finalize_workflow(lasso_us_best_model) %>%
+    fit(Data)
+
+lasso_us_test_results <-
+    grid_results %>%
+    extract_workflow("UPSAMPLE_Lasso_Reg") %>%
+    finalize_workflow(lasso_us_best_results) %>%
+    last_fit(split = data_split)
+
+### Important variables
+
+lasso_us_importance_tbl <- vip::vi(lasso_us_wflw_fit_final$fit$fit$fit)
+lasso_us_wflw_fit_final %>%
+    fit(Data) %>%
+    extract_fit_parsnip() %>%
+    vip::vi()
+
+#SAVE the model
+saveRDS(lasso_us_wflw_fit_final, file = "~/Desktop/Advanced Analytics/Project/Models_v3/us_lasso_model_for_attrition_2024.rds")
+```
+
+UPSAMPLE_Elasticnet_Reg	
+```{r}
+en_us_best_results <-
+  grid_results %>% #this is where we pull form
+  extract_workflow_set_result("UPSAMPLE_Elasticnet_Reg") %>%
+  select_best(metric = "pr_auc")
+
+en_us_best_results
+
+#Checking out variable importance
+en_us_best_model <- grid_results %>%
+    extract_workflow_set_result(id = "UPSAMPLE_Elasticnet_Reg") %>%
+    select_best(metric = "pr_auc")
+
+en_us_wflw_fit_final <- grid_results %>%
+    extract_workflow("UPSAMPLE_Elasticnet_Reg") %>%
+    finalize_workflow(en_us_best_model) %>%
+    fit(Data)
+
+en_us_test_results <-
+    grid_results %>%
+    extract_workflow("UPSAMPLE_Elasticnet_Reg") %>%
+    finalize_workflow(en_us_best_results) %>%
+    last_fit(split = data_split)
+
+### Important variables
+
+en_us_importance_tbl <- vip::vi(en_us_wflw_fit_final$fit$fit$fit)
+en_us_wflw_fit_final %>%
+    fit(Data) %>%
+    extract_fit_parsnip() %>%
+    vip::vi()
+
+#SAVE the model
+saveRDS(en_us_wflw_fit_final, file = "~/Desktop/Advanced Analytics/Project/Models_v3/us_en_model_for_attrition_2024.rds")
+```
+
+UPSAMPLE_Random_Forest	
+```{r}
+
+rf_us_best_results <-
+  grid_results %>% #this is where we pull form
+  extract_workflow_set_result("UPSAMPLE_Random_Forest") %>%
+  select_best(metric = "pr_auc")
+
+rf_us_best_results
+
+#Checking out variable importance
+rf_us_best_model <- grid_results %>%
+    extract_workflow_set_result(id = "UPSAMPLE_Random_Forest") %>%
+    select_best(metric = "pr_auc")
+
+rf_us_wflw_fit_final <- grid_results %>%
+    extract_workflow("UPSAMPLE_Random_Forest") %>%
+    finalize_workflow(rf_us_best_model) %>%
+    fit(Data)
+
+
+rf_us_test_results <-
+    grid_results %>%
+    extract_workflow("UPSAMPLE_Random_Forest") %>%
+    finalize_workflow(rf_us_best_results) %>%
+    last_fit(split = data_split)
+
+### Important variables
+
+RF_us_importance_tbl <- vip::vi(rf_us_wflw_fit_final$fit$fit$fit)
+rf_us_wflw_fit_final %>%
+    fit(Data) %>%
+    extract_fit_parsnip() %>%
+    vip::vi()
+
+#SAVE the model
+saveRDS(rf_us_wflw_fit_final, file = "~/Desktop/Advanced Analytics/Project/Models_v3/us_RF_model_for_attrition_2024.rds")
+```
+
+UPSAMPLE_xgBoosted_Trees
+```{r}
+xgb_us_best_results <-
+  grid_results %>% #this is where we pull form
+  extract_workflow_set_result("UPSAMPLE_xgBoosted_Trees") %>%
+  select_best(metric = "pr_auc")
+
+xgb_us_best_results
+
+#Checking out variable importance
+xgb_us_best_model <- grid_results %>%
+    extract_workflow_set_result(id = "UPSAMPLE_xgBoosted_Trees") %>%
+    select_best(metric = "pr_auc")
+
+xgb_us_wflw_fit_final <- grid_results %>%
+    extract_workflow("UPSAMPLE_xgBoosted_Trees") %>%
+    finalize_workflow(xgb_us_best_model) %>%
+    fit(Data)
+
+xgb_us_test_results <-
+    grid_results %>%
+    extract_workflow("UPSAMPLE_xgBoosted_Trees") %>%
+    finalize_workflow(xgb_us_best_results) %>%
+    last_fit(split = data_split)
+
+### Important variables
+
+xgb_us_importance_tbl <- vip::vi(xgb_us_wflw_fit_final$fit$fit$fit)
+xgb_us_wflw_fit_final %>%
+    fit(Data) %>%
+    extract_fit_parsnip() %>%
+    vip::vi()
+
+#SAVE the model
+saveRDS(xgb_us_wflw_fit_final, file = "~/Desktop/Advanced Analytics/Project/Models_v3/us_XGB_model_for_attrition_2024.rds")
+```
+Let's make some predictions!
+
+Call in the finalized fitted workflow for the models you want to use, let's do this for our top performing model of each kind. (ADASYN RF, ADASYN XGB, US Lasso, US Ridge)
+
+We're going to look at PR-AUC - PR AUC measures how well a model can pick out the things it’s supposed to find. It combines two things: how often the model is right when it says something is there (precision) and how good it is at finding everything that’s supposed to be there (recall).
+
+We're also going to look at Receiver Operating Characteristic Curve (ROC) - The ROC curve plots the true positive rate (sensitivity) against the false positive rate (1 - specificity), showing how well your model distinguishes between the classes. This is an especially important curve for us to visualize because these two pieces of our confusion matrix later on carry the greatest monetary significance (true positives are worth +$45000, and false positives are worth -$100000) This code is repeated four times for the other models we're exploring, but I will only comment once to explain what the code is doing since it's the same across each iteration of the code.
+
+```{r}
+#######Random Forest with Adasyn Preprocessing##########
+
+## Creates Precision Recall CURVE ##
+#PR AUC measures how well a model can pick out the things it’s supposed to find. It combines two things: how often the model is right when it says something is there (precision) and how good it is at finding everything that’s supposed to be there (recall).#
+
+rf_adasyn_test_results %>%
+  collect_predictions() %>%
+  pr_curve(left, .pred_0) %>%
+  ggplot(aes(x = recall, y = precision)) +
+  geom_path() + 
+  coord_equal() +
+  theme_bw()+
+  labs(title = 'Random Forest Adasyn Precison Recall Curve')
+
+## Creates ROC Curve with ggplot2. ROC is the Receive Operating Characteristic and plots True Positive rate(sensitivity) against the false positive rate (1-specificity) ##
+
+rf_adasyn_test_results %>%
+    collect_predictions() %>%
+    roc_curve(left, .pred_0) %>%
+    ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+    geom_line(size = 1.5, color = "midnightblue") +
+    geom_abline(
+        lty = 2, alpha = 0.5,
+        color = "gray50",
+        size = 1.2
+    )+
+  labs(title = 'Random Forest Adasyn ROC AUC Curve')
+
+##Confusion Matrix##
+rf_adasyn_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) 
+
+##gives overall confusion matrix performance
+rf_adasyn_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) %>% 
+    summary() 
+
+
+
+## Make Predictions ###
+rf_adasyn_predictions_tbl <- rf_adasyn_wflw_fit_final %>%
+    predict(new_data = Data) %>%
+    bind_cols(Data)
+
+### Get probabilities of someone leaving for the whole data set based on our model. We can use this later to see which model is working the best for the parameters we are interested in
+
+rf_adasyn_prob_predictions <- rf_adasyn_wflw_fit_final %>%
+    predict(new_data = Data,
+            type = "prob") # added type = "prob" to give the probabilities
+
+#puts those probability columns on the overall table
+rf_adasyn_predictions_tbl <- rf_adasyn_prob_predictions %>%
+    bind_cols(rf_adasyn_predictions_tbl)
+
+rf_adasyn_test_results %>%
+  collect_predictions()
+
+##Workflow Fitting to training data
+
+rf_adasyn_wflw_fit <- grid_results %>%
+    extract_workflow("ADASYN_Random_Forest") %>%
+    finalize_workflow(rf_adaysn_best_model) %>%
+    fit(training(data_split))
+
+# make bar graph that plots prediction probabilities by attrition status
+rf_adasyn_wflw_fit %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  ggplot(aes(x=.pred_1, fill = left, color = left)) +
+    geom_histogram(bins = 40, alpha = 0.5) +
+    theme_minimal() +
+    scale_fill_viridis_d(aesthetics = c('color', 'fill'), end = 0.8) +
+    labs(title = 'Distribution of Prediction Probabilities by Attrition Status
+         Random Forest Adasyn', x = 'Probability Prediction', y = 'Count')
+```
+Our ROC AUC is really good here. Like almost 1, we might be close to the theoretical ceiling for savings with this model.
+
+```{r}
+#######XGBoosted Trees with Adasyn Preprocessing##########
+
+## PR CURVE ##
+xgb_adasyn_test_results %>%
+  collect_predictions() %>%
+  pr_curve(left, .pred_0) %>%
+  ggplot(aes(x = recall, y = precision)) +
+  geom_path() + 
+  coord_equal() +
+  theme_bw()+
+  labs(title = 'XGB Adasyn Precison Recall Curve')
+
+## ROC Curve ##
+
+xgb_adasyn_test_results %>%
+    collect_predictions() %>%
+    roc_curve(left, .pred_0) %>%
+    ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+    geom_line(size = 1.5, color = "midnightblue") +
+    geom_abline(
+        lty = 2, alpha = 0.5,
+        color = "gray50",
+        size = 1.2
+    )+
+  labs(title = 'XGB Adasyn ROC AUC Curve')
+
+##Confusion Matrix##
+xgb_adasyn_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) 
+
+##gives overall confusion matrix performance
+xgb_adasyn_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) %>% 
+    summary() 
+
+
+
+## Make Predictions ###
+xgb_adasyn_predictions_tbl <- xgb_adasyn_wflw_fit_final %>%
+    predict(new_data = Data) %>%
+    bind_cols(Data)
+
+### Get probabilities of someone leaving
+
+xgb_adasyn_prob_predictions <- xgb_adasyn_wflw_fit_final %>%
+    predict(new_data = Data,
+            type = "prob") # added type = "prob" to give the probabilities
+
+xgb_adasyn_predictions_tbl <- xgb_adasyn_prob_predictions %>%
+    bind_cols(xgb_adasyn_predictions_tbl)
+
+xgb_adasyn_test_results %>%
+  collect_predictions()
+
+#Workflow Fitting
+xgb_adasyn_wflw_fit <- grid_results %>%
+    extract_workflow("ADASYN_xgBoosted_Trees") %>%
+    finalize_workflow(xgb_adaysn_best_model) %>%
+    fit(training(data_split))
+
+
+xgb_adasyn_wflw_fit %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  ggplot(aes(x=.pred_1, fill = left, color = left)) +
+    geom_histogram(bins = 40, alpha = 0.5) +
+    theme_minimal() +
+    scale_fill_viridis_d(aesthetics = c('color', 'fill'), end = 0.8) +
+    labs(title = 'Distribution of Prediction Probabilities by Attrition Status
+         XGB Adasyn', x = 'Probability Prediction', y = 'Count')
+```
+```{r}
+#######Lasso Regression with Upsampling Preprocessing##########
+
+## PR CURVE ##
+lasso_us_test_results %>%
+  collect_predictions() %>%
+  pr_curve(left, .pred_0) %>%
+  ggplot(aes(x = recall, y = precision)) +
+  geom_path() + 
+  coord_equal() +
+  theme_bw()+
+  labs(title = 'Lasso Upsampled Precison Recall Curve')
+
+## ROC Curve ##
+
+lasso_us_test_results %>%
+    collect_predictions() %>%
+    roc_curve(left, .pred_0) %>%
+    ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+    geom_line(size = 1.5, color = "midnightblue") +
+    geom_abline(
+        lty = 2, alpha = 0.5,
+        color = "gray50",
+        size = 1.2
+    )+
+  labs(title = 'Lasso Upsampled ROC AUC Curve')
+
+##Confusion Matrix##
+lasso_us_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) 
+
+##gives overall confusion matrix performance
+lasso_us_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) %>% 
+    summary() 
+
+
+
+## Make Predictions ###
+lasso_us_predictions_tbl <- lasso_us_wflw_fit_final %>%
+    predict(new_data = Data) %>%
+    bind_cols(Data)
+
+### Get probabilities of someone leaving
+
+lasso_us_prob_predictions <- lasso_us_wflw_fit_final %>%
+    predict(new_data = Data,
+            type = "prob") # added type = "prob" to give the probabilities
+
+lasso_us_predictions_tbl <- lasso_us_prob_predictions %>%
+    bind_cols(lasso_us_predictions_tbl)
+
+lasso_us_test_results %>%
+  collect_predictions()
+
+#Workflow Fitting
+lasso_us_wflw_fit <- grid_results %>%
+    extract_workflow("UPSAMPLE_Lasso_Reg") %>%
+    finalize_workflow(lasso_us_best_model) %>%
+    fit(training(data_split))
+
+
+lasso_us_wflw_fit %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  ggplot(aes(x=.pred_1, fill = left, color = left)) +
+    geom_histogram(bins = 40, alpha = 0.5) +
+    theme_minimal() +
+    scale_fill_viridis_d(aesthetics = c('color', 'fill'), end = 0.8) +
+    labs(title = 'Distribution of Prediction Probabilities by Attrition Status
+         Upsampled Lasso', x = 'Probability Prediction', y = 'Count')
+```
+
+```{r}
+### ELasticnet Regression w/ Upsampled Preprocessing####
+
+
+en_us_test_results %>%
+  collect_predictions() %>%
+  pr_curve(left, .pred_0) %>%
+  ggplot(aes(x = recall, y = precision)) +
+  geom_path() + 
+  coord_equal() +
+  theme_bw()+
+  labs(title = 'Elasticnet Upsampled Precison Recall Curve')
+
+## ROC Curve ##
+
+en_us_test_results %>%
+    collect_predictions() %>%
+    roc_curve(left, .pred_0) %>%
+    ggplot(aes(x = 1 - specificity, y = sensitivity)) +
+    geom_line(size = 1.5, color = "midnightblue") +
+    geom_abline(
+        lty = 2, alpha = 0.5,
+        color = "gray50",
+        size = 1.2
+    )+
+  labs(title = 'Elasticnet Upsampled ROC AUC Curve')
+
+##Confusion Matrix##
+en_us_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) 
+
+##gives overall confusion matrix performance
+en_us_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) %>% 
+    summary() 
+
+
+
+## Make Predictions ###
+en_us_predictions_tbl <- en_us_wflw_fit_final %>%
+    predict(new_data = Data) %>%
+    bind_cols(Data)
+
+### Get probabilities of someone leaving
+
+en_us_prob_predictions <- en_us_wflw_fit_final %>%
+    predict(new_data = Data,
+            type = "prob") # added type = "prob" to give the probabilities
+
+en_us_predictions_tbl <- en_us_prob_predictions %>%
+    bind_cols(en_us_predictions_tbl)
+
+en_us_test_results %>%
+  collect_predictions()
+
+#Workflow Fitting to. training data
+en_us_wflw_fit <- grid_results %>%
+    extract_workflow("UPSAMPLE_Elasticnet_Reg") %>%
+    finalize_workflow(en_us_best_model) %>%
+    fit(training(data_split))
+
+
+en_us_wflw_fit %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  ggplot(aes(x=.pred_1, fill = left, color = left)) +
+    geom_histogram(bins = 40, alpha = 0.5) +
+    theme_minimal() +
+    scale_fill_viridis_d(aesthetics = c('color', 'fill'), end = 0.8) +
+    labs(title = 'Distribution of Prediction Probabilities by Attrition Status
+         Upsampled Lasso', x = 'Probability Prediction', y = 'Count')
+```
+Let's just figure out what all this is gonna cost us if we use the different models. We'll start with the Adasyn Random forest model because it's performing the best and if we run out of time, it's what we should recommend at this point. Then we'll do XGB, Lasso, the EN. This code is repeated 4 times, so I'll only really comment it out once.
+
+Applying the full data set after Dr. Stilson's Generous office hours***
+```{r}
+
+## Adasyn Random Forest ##
+#First, lets just pull back in our test data confusion matrix so we can remember what it looks like
+library(probably)
+rf_adasyn_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) 
+
+## this is a confusion matrix for the full data set based on our final Random Forest Model
+rf_adasyn_predictions_tbl %>% tabyl(.pred_class, left)
+
+
+#Threshold Analysis
+rf_params_best_model2 <- grid_results %>%
+    extract_workflow_set_result(id = "ADASYN_Random_Forest") %>%
+    select_best(metric = "j_index") # we did this earlier, but with AUC
+
+rf_wflw_fit2 <- grid_results %>%
+    extract_workflow("ADASYN_Random_Forest") %>%
+    finalize_workflow(rf_params_best_model) %>%
+    fit(training(data_split))
+
+#Look At it
+rf_wflw_fit2 %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  ggplot(aes(x=.pred_1, fill = left, color = left)) +
+    geom_histogram(bins = 40, alpha = 0.5) +
+    theme_minimal() +
+    scale_fill_viridis_d(aesthetics = c('color', 'fill'), end = 0.8) +
+    labs(title = 'Distribution of Prediction Probabilities by Attrition Status (RF-ADASYN)', x = 'Probability Prediction', y = 'Count')
+
+#Generate Probability Prediction Dataset
+rf_wflw_pred2 <- rf_wflw_fit2 %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  select(left, .pred_0, .pred_1)
+
+#Generate Sequential Threshold Tibble
+rf_threshold_data2 <- rf_wflw_pred2 %>% 
+  threshold_perf(truth = left, 
+                 estimate = .pred_0, # This needs to be .pred_No instead of .pred_Yes. Because reasons.
+                 thresholds = seq(0.1, 1, by = 0.01))
+
+#Identify Threshold for Maximum J-Index - Threshold here is the %chance of leaving before we give a retention bonus
+rf_max_j_index2 <- rf_threshold_data2 %>% 
+  filter(.metric == 'j_index') %>% 
+  filter(.estimate == max(.estimate)) %>% 
+  select(.threshold) %>% 
+  as_vector()
+
+rf_max_j_index_with_estimate <- rf_threshold_data %>%
+  filter(.metric == 'j_index') %>% 
+  filter(.estimate == max(.estimate)) %>% 
+  select(.threshold, .estimate) %>% 
+  as_tibble
+
+## Visualize that threshold analysis we just did
+rf_threshold_data %>% 
+  filter(.metric != 'distance') %>% 
+  ggplot(aes(x=.threshold, y=.estimate, color = .metric)) +
+   geom_line(size = 2) +
+   geom_vline(xintercept = rf_max_j_index, lty = 5, alpha = .6) +
+   theme_minimal() +
+   scale_colour_viridis_d(end = 0.8) +
+   labs(x='Threshold', 
+        y='Estimate', 
+        title = 'Balancing Performance by Varying Threshold (RF ADASYN)',
+        subtitle = 'Verticle Line = Max J-Index',
+        color = 'Metric')
+rf_max_j_index_with_estimate
+
+##########################################Lets put some dollars to it ##########################################
+
+###### Instead of a cost function like we learned in class, we're going to write a "value function" that takes into account the savings associated with saving someone from leaving by giving them 5000. In this function, costs are given negative values for money the company spends (incentive payments & attrition costs) whereas savings are given positive values (saved attrition costs)
+
+##The cost of the intervention is $5,000, but it only works half the time, so we arrive at the following values:
+# (Pred,Observed)
+# (1/1) True Positive (TP) = +$45,000 - we predicted they'd leave and they did (or wanted to) $100,000 BUT! We have to multiply this by .5, and then subtract the $5000 incentive = $45000
+# (0,0) True Negative (TN) = $0
+# (1,0) False Positive (FP) = -$5,000 - we predicted they would leave and they did not
+# False Negative (FN) = -$100,000 - we predicted they would stay and they did not
+
+rf_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 21),
+         Save_TP = (sensitivity * 45000 * 2343),
+         Cost_FP = ((1-specificity) * -5000 * 37),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP)
+
+rf_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 21),
+         Save_TP = (sensitivity * 45000 * 2343),
+         Cost_FP = ((1-specificity) * -5000 * 37),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP) %>% 
+ select(.threshold, Cost_FN, Cost_FP, Save_TP, Total_Cost) %>% 
+ pivot_longer(Cost_FN:Total_Cost, names_to = 'Cost_Function', values_to = 'Cost') %>% 
+  ggplot(aes(x = .threshold, y = Cost, color = Cost_Function)) +
+    geom_line(size = 1.5) +
+    theme_minimal() +
+    scale_colour_viridis_d(end = 0.8) +
+    labs(title = 'Threshold Cost Function', x = 'Threshold')
+
+
+#this little number below helps us pick the best threshold for optimizing our cost (or savings) of implementing this program. Spoiler alert - it works out to 0.99
+total_savings_table_rf <- rf_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 21),
+         Save_TP = (sensitivity * 45000 * 2343),
+         Cost_FP = ((1-specificity) * -5000 * 37),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP) %>%
+    arrange(Total_Cost)
+
+total_savings_table_rf
+
+#now we gotta find the corresponding j-value to go with .19 ---- It's .910 - thats actually still really good!
+rf_best_j_index_with_estimate_for_cost <- rf_threshold_data %>%
+  filter(.metric == 'j_index') %>% 
+  filter(.threshold == 0.19) %>%
+  select(.threshold, .estimate) %>% 
+  as_tibble
+
+rf_best_j_index_with_estimate_for_cost
+
+## As we have established cost functions, we can then identify a decision threshold that minimizes these costs (or maximizes our savings since our model is just so dang good). As noted in the introduction, we can think of two scenarios, as we’ve identified above, the threshold that optimizes the J-index or the threshold that minimizes cost (maximizes savings). This is demonstrated below.
+
+
+rf_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost = ((1-sensitivity) * -100000 * 21) + ((sensitivity) * 2343 * 45000) + ((1-specificity) * -5000 * 37),
+         j_index = (sensitivity + specificity) - 1) %>% 
+  ggplot(aes(y = Cost, x = .threshold)) +
+    geom_line() +
+    geom_point(aes(size = j_index, color = j_index)) +
+    geom_vline(xintercept = 0.19, lty = 2) + # Put your optimal j-index value here
+    annotate(x = 0.75, y = 75000000, geom = 'text', label = 'Best Class Differentiation\nJ-Index = 0.946,\nSave = $104,862,617,\nThreshold = 0.53') +
+    geom_vline(xintercept = 0.53, lty = 2) + # Put your optimal j-index value per the cost function here
+    annotate(x = 0.37, y = 75000000, geom = 'text', label = 'Best Savings Model\nJ-Index = 0.910,\nSave = $105,418,409,\nThreshold = 0.19') +
+    theme_minimal() +
+    scale_colour_viridis_c() +
+    scale_y_continuous(labels = scales::comma) +
+    labs(title = 'Optimizing Turnover and Cost Savings: Impact of Retention Bonuses', 
+         subtitle = 'Where Treatment Cost = $5,000 & Attrition Cost = $100,000',
+         x = 'Classification Threshold', y = 'Savings', size = 'J-Index', color = 'J-Index')
+
+```
+
+
+
+
+These are the drones you're looking for. Our Random Forest model performed best when considering the cost savings and j-index performance combined. Reducing our decision threshold from .99 to .53 for administering a $5,000 retention bonus results in a slight decrease in potential savings, from $41,918 to $39,831. However, this change nearly doubles our J-index from .479 to .946, significantly improving our model's performance.
+
+To illustrate: imagine our model is predicting which of 1,000 employees are at risk of leaving. At a high threshold of .99, the model would only recommend giving a retention bonus to employees with an extremely high probability of leaving, perhaps identifying just a few who are truly at risk. At the lower threshold of .53, the model will suggest bonuses to more employees who are at risk, such as 10 rather than just 5, and will capture more at-risk employees who might otherwise be missed.
+
+While this results in a reduction of $2,087 in potential savings due to more bonuses being given out, the substantial increase in the J-index indicates that our model is now much better at accurately identifying employees who are likely to leave. This means we’re more effective at targeting those who need the bonus to stay, improving overall employee retention. The trade-off of a small decrease in savings for a much more accurate model is worthwhile, as it enhances our ability to make informed decisions and better manage employee attrition.
+
+Look at the total cost curve - It makes it look like theres really no way to not have a positive ROI here.
+
+
+```{r}
+## XGB Random Forest ##
+#First, lets just pull back in our confusion matrix so we can remember what it looks like
+library(probably)
+xgb_adasyn_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) 
+
+## this is a confusion matrix for the full data set based on our final XGB Model
+xgb_adasyn_predictions_tbl %>% tabyl(.pred_class, left)
+
+#Threshold Analysis
+xgb_params_best_model <- grid_results %>%
+    extract_workflow_set_result(id = "ADASYN_xgBoosted_Trees") %>%
+    select_best(metric = "j_index") # we did this earlier, but with AUC
+
+xgb_wflw_fit <- grid_results %>%
+    extract_workflow("ADASYN_xgBoosted_Trees") %>%
+    finalize_workflow(xgb_params_best_model) %>%
+    fit(training(data_split))
+
+#Look At it
+xgb_wflw_fit %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  ggplot(aes(x=.pred_1, fill = left, color = left)) +
+    geom_histogram(bins = 40, alpha = 0.5) +
+    theme_minimal() +
+    scale_fill_viridis_d(aesthetics = c('color', 'fill'), end = 0.8) +
+    labs(title = 'Distribution of Prediction Probabilities by Attrition Status (XGB-ADASYN)', x = 'Probability Prediction', y = 'Count')
+
+#Generate Probability Prediction Dataset
+xgb_wflw_pred <- xgb_wflw_fit %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  select(left, .pred_0, .pred_1)
+
+#Generate Sequential Threshold Tibble
+xgb_threshold_data <- xgb_wflw_pred %>% 
+  threshold_perf(truth = left, 
+                 estimate = .pred_0, 
+                 thresholds = seq(0.1, 1, by = 0.01))
+
+#Identify Threshold for Maximum J-Index
+xgb_max_j_index <- xgb_threshold_data %>% 
+  filter(.metric == 'j_index') %>% 
+  filter(.estimate == max(.estimate)) %>% 
+  select(.threshold) %>% 
+  as_vector()
+
+xgb_max_j_index_with_estimate <- xgb_threshold_data %>%
+  filter(.metric == 'j_index') %>% 
+  filter(.estimate == max(.estimate)) %>% 
+  select(.threshold, .estimate) %>% 
+  as_tibble
+
+## Visualize that threshold analysis we just did
+xgb_threshold_data %>% 
+  filter(.metric != 'distance') %>% 
+  ggplot(aes(x=.threshold, y=.estimate, color = .metric)) +
+   geom_line(size = 2) +
+   geom_vline(xintercept = xgb_max_j_index, lty = 5, alpha = .6) +
+   theme_minimal() +
+   scale_colour_viridis_d(end = 0.8) +
+   labs(x='Threshold', 
+        y='Estimate', 
+        title = 'Balancing Performance by Varying Threshold (XGB ADASYN)',
+        subtitle = 'Verticle Line = Max J-Index',
+        color = 'Metric')
+xgb_max_j_index_with_estimate
+
+##########################################Lets put some dollars to it ##########################################
+
+###### Instead of a cost function like we learned in class, we're going to write a "value function" that takes into account the savings associated with saving someone from leaving by giving them 5000. In this function, costs are given negative values for money the company spends (incentive payments & attrition costs) whereas savings are given positive values (saved attrition costs)
+
+##The cost of the intervention is $5,000, but it only works half the time, so we arrive at the following values:
+# (Pred,Observed)
+# (1/1) True Positive (TP) = +$45,000 - we predicted they'd leave and they did (or wanted to) $100,000 BUT! We have to multiply this by .5, and then subtract the $5000 incentive = $45000
+# (0,0) True Negative (TN) = $0
+# (1,0) False Positive (FP) = -$5,000 - we predicted they would leave and they did not
+# False Negative (FN) = -$100,000 - we predicted they would stay and they did not
+
+xgb_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 69),
+         Save_TP = (sensitivity * 45000 * 2295),
+         Cost_FP = ((1-specificity) * -5000 * 311),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP)
+
+xgb_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 69),
+         Save_TP = (sensitivity * 45000 * 2295),
+         Cost_FP = ((1-specificity) * -5000 * 311),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP) %>% 
+ select(.threshold, Cost_FN, Cost_FP, Save_TP, Total_Cost) %>% 
+ pivot_longer(Cost_FN:Total_Cost, names_to = 'Cost_Function', values_to = 'Cost') %>% 
+  ggplot(aes(x = .threshold, y = Cost, color = Cost_Function)) +
+    geom_line(size = 1.5) +
+    theme_minimal() +
+    scale_colour_viridis_d(end = 0.8) +
+    labs(title = 'Threshold Cost Function', x = 'Threshold')
+
+
+
+total_savings_table_xgb <- xgb_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 69),
+         Save_TP = (sensitivity * 45000 * 2295),
+         Cost_FP = ((1-specificity) * -5000 * 311),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP) %>%
+    arrange(Total_Cost)
+
+total_savings_table_xgb
+
+#now we gotta find the corresponding j-value to go with .14 ---- It's .919
+xgb_best_j_index_with_estimate_for_cost <- xgb_threshold_data %>%
+  filter(.metric == 'j_index') %>% 
+  filter(.threshold == 0.14) %>%
+  select(.threshold, .estimate) %>% 
+  as_tibble
+
+xgb_best_j_index_with_estimate_for_cost
+
+## As we have established cost functions, we can then identify a decision threshold that minimizes these costs (or maximizes our savings since our model is just so dang good). As noted in the introduction, we can think of two scenarios, as we’ve identified above, the threshold that optimizes the J-index or the threshold that minimizes cost (maximizes savings). This is demonstrated below.
+
+
+xgb_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost = ((1-sensitivity) * -100000 * 69) + ((sensitivity) * 2295 * 45000) + ((1-specificity) * -5000 * 311),
+         j_index = (sensitivity + specificity) - 1) %>% 
+  ggplot(aes(y = Cost, x = .threshold)) +
+    geom_line() +
+    geom_point(aes(size = j_index, color = j_index)) +
+    geom_vline(xintercept = 0.53, lty = 2) + # Put your optimal j-index value here
+    annotate(x = 0.75, y = 75000000, geom = 'text', label = 'Best Class Differentiation\nJ-Index = 0.942,\nSave = $101,876,550,\nThreshold = 0.53') +
+    geom_vline(xintercept = 0.14, lty = 2) + # Put your optimal j-index value per the cost function here
+    annotate(x = 0.37, y = 75000000, geom = 'text', label = 'Best Savings Model\nJ-Index = 0.919,\nSave = $102,978,196,\nThreshold = 0.14') +
+    theme_minimal() +
+    scale_colour_viridis_c() +
+    scale_y_continuous(labels = scales::comma) +
+    labs(title = 'Optimizing Turnover and Cost Savings: Impact of Retention Bonuses', 
+         subtitle = 'Where Treatment Cost = $5,000 & Attrition Cost = $100,000',
+         x = 'Classification Threshold', y = 'Savings', size = 'J-Index', color = 'J-Index')
+```
+## This model is doing some funky stuff. We're getting different cutoffs and estimates each time the code is rerun - the main takeaway regardless is that this doesn't do as good of a job based on confustion matrix performance compared to random forest. if you try to rerun this code, for XGB specifically just be aware that something funky is going on. This inability to replicate consistent results also makes me hesitant to use this model. We'll include the figures from the last time we ran it which are reflected in the labels on the graph and report those, but we'll asterisk them in our report for it being an unstable model.
+
+XG Boost does really well here, and if it wasn't for the random forest performing so well, we'd probably have a winner. The tradeoff in savings for J-index here is completely worth it (less than $400). This model also took a good bit longer to run and was more computationally expensive than the random forest (5 hrs vs. 1.75). From a simplicity standpoint, the random forest has a lot less to tune and can directly handle categorical values (like our outcome) without needing a ton of extensive coding.
+
+
+```{r}
+## Upsampled Lasso Regression  ##
+#First, lets just pull back in our confusion matrix so we can remember what it looks like
+library(probably)
+lasso_us_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) 
+
+lasso_us_predictions_tbl %>% tabyl(.pred_class, left)
+
+#Threshold Analysis
+lasso_params_best_model <- grid_results %>%
+    extract_workflow_set_result(id = "UPSAMPLE_Lasso_Reg") %>%
+    select_best(metric = "j_index") # we did this earlier, but with AUC
+
+lasso_wflw_fit <- grid_results %>%
+    extract_workflow("UPSAMPLE_Lasso_Reg") %>%
+    finalize_workflow(lasso_params_best_model) %>%
+    fit(training(data_split))
+
+#Look At it
+lasso_wflw_fit %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  ggplot(aes(x=.pred_1, fill = left, color = left)) +
+    geom_histogram(bins = 40, alpha = 0.5) +
+    theme_minimal() +
+    scale_fill_viridis_d(aesthetics = c('color', 'fill'), end = 0.8) +
+    labs(title = 'Distribution of Prediction Probabilities by Attrition Status (Lasso)', x = 'Probability Prediction', y = 'Count')
+
+#Generate Probability Prediction Dataset
+lasso_wflw_pred <- lasso_wflw_fit %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  select(left, .pred_0, .pred_1)
+
+#Generate Sequential Threshold Tibble
+lasso_threshold_data <- lasso_wflw_pred %>% 
+  threshold_perf(truth = left, 
+                 estimate = .pred_0, # This needs to be .pred_No instead of .pred_Yes. Because reasons.
+                 thresholds = seq(0.1, 1, by = 0.01))
+
+#Identify Threshold for Maximum J-Index
+lasso_max_j_index <- lasso_threshold_data %>% 
+  filter(.metric == 'j_index') %>% 
+  filter(.estimate == max(.estimate)) %>% 
+  select(.threshold) %>% 
+  as_vector()
+
+lasso_max_j_index_with_estimate <- lasso_threshold_data %>%
+  filter(.metric == 'j_index') %>% 
+  filter(.estimate == max(.estimate)) %>% 
+  select(.threshold, .estimate) %>% 
+  as_tibble
+
+## Visualize that threshold analysis we just did
+lasso_threshold_data %>% 
+  filter(.metric != 'distance') %>% 
+  ggplot(aes(x=.threshold, y=.estimate, color = .metric)) +
+   geom_line(size = 2) +
+   geom_vline(xintercept = lasso_max_j_index, lty = 5, alpha = .6) +
+   theme_minimal() +
+   scale_colour_viridis_d(end = 0.8) +
+   labs(x='Threshold', 
+        y='Estimate', 
+        title = 'Balancing Performance by Varying Threshold (Lasso Upsample)',
+        subtitle = 'Verticle Line = Max J-Index',
+        color = 'Metric')
+lasso_max_j_index_with_estimate
+
+##########################################Lets put some dollars to it ##########################################
+
+###### Instead of a cost function like we learned in class, we're going to write a "value function" that takes into account the savings associated with saving someone from leaving by giving them 5000. In this function, costs are given negative values for money the company spends (incentive payments & attrition costs) whereas savings are given positive values (saved attrition costs)
+
+##The cost of the intervention is $5,000, but it only works half the time, so we arrive at the following values:
+# (Pred,Observed)
+# (1/1) True Positive (TP) = +$45,000 - we predicted they'd leave and they did (or wanted to) $100,000 BUT! We have to multiply this by .5, and then subtract the $5000 incentive = $45000
+# (0,0) True Negative (TN) = $0
+# (1,0) False Positive (FP) = -$5,000 - we predicted they would leave and they did not
+# False Negative (FN) = -$100,000 - we predicted they would stay and they did not
+
+lasso_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 372),
+         Save_TP = (sensitivity * 45000 * 1992),
+         Cost_FP = ((1-specificity) * -5000 * 1917),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP)
+
+lasso_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 372),
+         Save_TP = (sensitivity * 45000 * 1992),
+         Cost_FP = ((1-specificity) * -5000 * 1917),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP) %>% 
+ select(.threshold, Cost_FN, Cost_FP, Save_TP, Total_Cost) %>% 
+ pivot_longer(Cost_FN:Total_Cost, names_to = 'Cost_Function', values_to = 'Cost') %>% 
+  ggplot(aes(x = .threshold, y = Cost, color = Cost_Function)) +
+    geom_line(size = 1.5) +
+    theme_minimal() +
+    scale_colour_viridis_d(end = 0.8) +
+    labs(title = 'Threshold Cost Function', x = 'Threshold')
+
+
+
+total_savings_table_lasso <- lasso_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 372),
+         Save_TP = (sensitivity * 45000 * 1992),
+         Cost_FP = ((1-specificity) * -5000 * 1917),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP) %>%
+    arrange(Total_Cost)
+
+total_savings_table_lasso
+
+#now we gotta find the corresponding j-value to go with .19 ---- It's .479
+lasso_best_j_index_with_estimate_for_cost <- lasso_threshold_data %>%
+  filter(.metric == 'j_index') %>% 
+  filter(.threshold == 0.10) %>%
+  select(.threshold, .estimate) %>% 
+  as_tibble
+
+lasso_best_j_index_with_estimate_for_cost
+
+## As we have established cost functions, we can then identify a decision threshold that minimizes these costs (or maximizes our savings since our model is just so dang good). As noted in the introduction, we can think of two scenarios, as we’ve identified above, the threshold that optimizes the J-index or the threshold that minimizes cost (maximizes savings). This is demonstrated below.
+
+
+lasso_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost = ((1-sensitivity) * -100000 * 372) + ((sensitivity) * 1992 * 45000) + ((1-specificity) * -5000 * 1917),
+         j_index = (sensitivity + specificity) - 1) %>% 
+  ggplot(aes(y = Cost, x = .threshold)) +
+    geom_line() +
+    geom_point(aes(size = j_index, color = j_index)) +
+    geom_vline(xintercept = 0.49, lty = 2) + # Put your optimal j-index value here
+    annotate(x = 0.75, y = 75000000, geom = 'text', label = 'Best Class Differentiation\nJ-Index = 0.611,\nSave = $76,403,366,\nThreshold = 0.49') +
+    geom_vline(xintercept = 0.1, lty = 2) + # Put your optimal j-index value per the cost function here
+    annotate(x = 0.25, y = 75000000, geom = 'text', label = 'Best Savings Model\nJ-Index = 0.01,\nSave = $97,473,055,\nThreshold = 0.10') +
+    theme_minimal() +
+    scale_colour_viridis_c() +
+    scale_y_continuous(labels = scales::comma) +
+    labs(title = 'Optimizing Turnover and Cost Savings: Impact of Retention Bonuses', 
+         subtitle = 'Where Treatment Cost = $5,000 & Attrition Cost = $100,000',
+         x = 'Classification Threshold', y = 'Savings', size = 'J-Index', color = 'J-Index')
+```
+
+Although Simplistic and still able to save us money, I wouldn't recommend the lasso regression here. The J value where we maximize savings isnt going to give us the combination of sensitivity and specificity to compete with some of the more complex models we've run up top. Even with the best j-value this model produces, it's not going to get us there to compare with either XG Boost or Random Forest. I just put this in here to show what a super simple model could look like.
+
+You can see from this cost model that there's actually something at stake here if we don't set our threshold appropriately. The cost of false negatives has the real chance of dragging us into the mud if we don't go with a threshold that's going to allow a good bit of false positives (which we're also trying to minimize.) I don't think this really has a fighting chance.
+```{r}
+## Upsampled Elasticnet Regression  ##
+#First, lets just pull back in our confusion matrix so we can remember what it looks like
+library(probably)
+en_us_test_results %>%
+    collect_predictions() %>%
+    conf_mat(truth = left, estimate = .pred_class) 
+
+en_us_predictions_tbl %>% tabyl(.pred_class, left)
+
+#Threshold Analysis
+en_params_best_model <- grid_results %>%
+    extract_workflow_set_result(id = "UPSAMPLE_Elasticnet_Reg") %>%
+    select_best(metric = "j_index") # we did this earlier, but with AUC
+
+en_wflw_fit <- grid_results %>%
+    extract_workflow("UPSAMPLE_Elasticnet_Reg") %>%
+    finalize_workflow(en_params_best_model) %>%
+    fit(training(data_split))
+
+#Look At it
+en_wflw_fit %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  ggplot(aes(x=.pred_1, fill = left, color = left)) +
+    geom_histogram(bins = 40, alpha = 0.5) +
+    theme_minimal() +
+    scale_fill_viridis_d(aesthetics = c('color', 'fill'), end = 0.8) +
+    labs(title = 'Distribution of Prediction Probabilities by Attrition Status (Lasso)', x = 'Probability Prediction', y = 'Count')
+
+#Generate Probability Prediction Dataset
+en_wflw_pred <- en_wflw_fit %>% 
+  predict(new_data = testing(data_split), type = 'prob') %>% 
+  bind_cols(testing(data_split)) %>% 
+  select(left, .pred_0, .pred_1)
+
+#Generate Sequential Threshold Tibble
+en_threshold_data <- en_wflw_pred %>% 
+  threshold_perf(truth = left, 
+                 estimate = .pred_0, # This needs to be .pred_No instead of .pred_Yes. Because reasons.
+                 thresholds = seq(0.1, 1, by = 0.01))
+
+#Identify Threshold for Maximum J-Index
+en_max_j_index <- en_threshold_data %>% 
+  filter(.metric == 'j_index') %>% 
+  filter(.estimate == max(.estimate)) %>% 
+  select(.threshold) %>% 
+  as_vector()
+
+en_max_j_index_with_estimate <- en_threshold_data %>%
+  filter(.metric == 'j_index') %>% 
+  filter(.estimate == max(.estimate)) %>% 
+  select(.threshold, .estimate) %>% 
+  as_tibble
+
+## Visualize that threshold analysis we just did
+en_threshold_data %>% 
+  filter(.metric != 'distance') %>% 
+  ggplot(aes(x=.threshold, y=.estimate, color = .metric)) +
+   geom_line(size = 2) +
+   geom_vline(xintercept = en_max_j_index, lty = 5, alpha = .6) +
+   theme_minimal() +
+   scale_colour_viridis_d(end = 0.8) +
+   labs(x='Threshold', 
+        y='Estimate', 
+        title = 'Balancing Performance by Varying Threshold (EN Upsample)',
+        subtitle = 'Verticle Line = Max J-Index',
+        color = 'Metric')
+en_max_j_index_with_estimate
+
+##########################################Lets put some dollars to it ##########################################
+
+###### Instead of a cost function like we learned in class, we're going to write a "value function" that takes into account the savings associated with saving someone from leaving by giving them 5000. In this function, costs are given negative values for money the company spends (incentive payments & attrition costs) whereas savings are given positive values (saved attrition costs)
+
+##The cost of the intervention is $5,000, but it only works half the time, so we arrive at the following values:
+# (Pred,Observed)
+# (1/1) True Positive (TP) = +$45,000 - we predicted they'd leave and they did (or wanted to) $100,000 BUT! We have to multiply this by .5, and then subtract the $5000 incentive = $45000
+# (0,0) True Negative (TN) = $0
+# (1,0) False Positive (FP) = -$5,000 - we predicted they would leave and they did not
+# False Negative (FN) = -$100,000 - we predicted they would stay and they did not
+
+en_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 372),
+         Save_TP = (sensitivity * 45000 * 1992),
+         Cost_FP = ((1-specificity) * -5000 * 1923),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP)
+
+en_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 372),
+         Save_TP = (sensitivity * 45000 * 1992),
+         Cost_FP = ((1-specificity) * -5000 * 1923),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP) %>% 
+ select(.threshold, Cost_FN, Cost_FP, Save_TP, Total_Cost) %>% 
+ pivot_longer(Cost_FN:Total_Cost, names_to = 'Cost_Function', values_to = 'Cost') %>% 
+  ggplot(aes(x = .threshold, y = Cost, color = Cost_Function)) +
+    geom_line(size = 1.5) +
+    theme_minimal() +
+    scale_colour_viridis_d(end = 0.8) +
+    labs(title = 'Threshold Cost Function', x = 'Threshold')
+
+
+
+total_savings_table_en <- en_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost_FN = ((1-sensitivity) * -100000 * 372),
+         Save_TP = (sensitivity * 45000 * 1992),
+         Cost_FP = ((1-specificity) * -5000 * 1923),
+         Total_Cost = Cost_FN + Cost_FP + Save_TP) %>%
+    arrange(Total_Cost)
+
+total_savings_table_en
+
+#now we gotta find the corresponding j-value to go with .19 ---- It's .479
+en_best_j_index_with_estimate_for_cost <- en_threshold_data %>%
+  filter(.metric == 'j_index') %>% 
+  filter(.threshold == 0.10) %>%
+  select(.threshold, .estimate) %>% 
+  as_tibble
+
+en_best_j_index_with_estimate_for_cost
+
+## As we have established cost functions, we can then identify a decision threshold that minimizes these costs (or maximizes our savings since our model is just so dang good). As noted in the introduction, we can think of two scenarios, as we’ve identified above, the threshold that optimizes the J-index or the threshold that minimizes cost (maximizes savings). This is demonstrated below.
+
+
+en_threshold_data %>% 
+  filter(.metric %in% c('sensitivity', 'specificity')) %>% 
+  pivot_wider(id_cols = .threshold, values_from = .estimate, names_from = .metric) %>% 
+  mutate(Cost = ((1-sensitivity) * -100000 * 372) + ((sensitivity) * 1992 * 45000) + ((1-specificity) * -5000 * 1923),
+         j_index = (sensitivity + specificity) - 1) %>% 
+  ggplot(aes(y = Cost, x = .threshold)) +
+    geom_line() +
+    geom_point(aes(size = j_index, color = j_index)) +
+    geom_vline(xintercept = 0.1, lty = 2) + # Put your optimal j-index value here
+    annotate(x = 0.62, y = 75000000, geom = 'text', label = 'Best Class Differentiation\nJ-Index = 0.610,\nSave = $76,345,653,\nThreshold = 0.49') +
+    geom_vline(xintercept = 0.49, lty = 2) + # Put your optimal j-index value per the cost function here
+    annotate(x = 0.17, y = 75000000, geom = 'text', label = 'Best Savings Model\nJ-Index = 0.011,\nSave = $97,470,424,\nThreshold = 0.10') +
+    theme_minimal() +
+    scale_colour_viridis_c() +
+    scale_y_continuous(labels = scales::comma) +
+    labs(title = 'Optimizing Turnover and Cost Savings: Impact of Retention Bonuses', 
+         subtitle = 'Where Treatment Cost = $5,000 & Attrition Cost = $100,000',
+         x = 'Classification Threshold', y = 'Savings', size = 'J-Index', color = 'J-Index')
+```
+Although Simplistic and still able to save us money, I wouldn't recommend the Elasticnet regression here. The J value where we maximize savings isnt going to give us the combination of sensitivity and specificity to compete with some of the more complex models we've run up top. Even with the best j-value this model produces, it's not going to get us there to compare with either XG Boost or Random Forest. I just put this in here to show what a super simple model could look like. Same story here as the lasso, the tradeoff to minimize FPs at the expense of FN's isn't as economically powerful here and can actually drag us into the negative if we don't watch it.
